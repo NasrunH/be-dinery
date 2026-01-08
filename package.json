@@ -3,10 +3,10 @@
   "version": "1.0.0",
   "description": "Backend API untuk aplikasi Dinery (Couple Edition)",
   "main": "src/app.js",
- "scripts": {
-  "start": "node src/app.js",
-  "dev": "npx nodemon src/app.js" 
-},
+  "scripts": {
+    "start": "node src/app.js",
+    "dev": "npx nodemon src/app.js"
+  },
   "keywords": [],
   "author": "",
   "license": "ISC",
