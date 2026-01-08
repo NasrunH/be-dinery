@@ -1,15 +1,12 @@
 {
   "name": "dinery-backend",
   "version": "1.0.0",
-  "description": "Backend API untuk aplikasi Dinery (Couple Edition)",
+  "description": "Dinery Backend - Auth Starter",
   "main": "src/app.js",
   "scripts": {
     "start": "node src/app.js",
     "dev": "npx nodemon src/app.js"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",
     "cors": "^2.8.5",
