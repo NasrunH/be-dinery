@@ -44,7 +44,12 @@ app.use((req, res) => {
   res.status(404).json({ message: "Endpoint tidak ditemukan" });
 });
 
-
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`\n🚀 SERVER RUNNING ON PORT ${PORT}`);
+    console.log(`👉 Docs: http://localhost:${PORT}/docs`);
+  });
+}
 
 app.listen(PORT, () => {
   console.log(`\n========================================`);
