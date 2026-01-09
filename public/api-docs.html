@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dinery API Documentation (Full)</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --bg: #f8fafc;
+            --sidebar-bg: #0f172a;
+            --text-main: #334155;
+            --code-bg: #1e1e1e;
+            --code-text: #d4d4d4;
+            --accent: #38bdf8;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; display: flex; height: 100vh; color: var(--text-main); background: var(--bg); }
+
+        /* Sidebar Styling */
+        .sidebar { width: 280px; background: var(--sidebar-bg); color: #94a3b8; padding: 0; overflow-y: auto; flex-shrink: 0; border-right: 1px solid #1e293b; display: flex; flex-direction: column; }
+        .sidebar-header { padding: 25px 20px; border-bottom: 1px solid #1e293b; }
+        .sidebar-header h2 { color: #f8fafc; font-size: 1.3rem; font-weight: 700; letter-spacing: -0.5px; }
+        .sidebar-header span { font-size: 0.75rem; background: var(--primary); color: white; padding: 2px 6px; border-radius: 4px; margin-left: 8px; vertical-align: middle; }
+        
+        .sidebar-nav { padding: 20px; }
+        .nav-group { margin-bottom: 25px; }
+        .nav-title { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1.2px; font-weight: 700; color: #475569; margin-bottom: 10px; padding-left: 10px; }
+        .nav-list { list-style: none; }
+        .nav-item a { display: block; padding: 8px 12px; font-size: 0.9rem; color: #cbd5e1; text-decoration: none; border-radius: 6px; transition: all 0.2s; border-left: 3px solid transparent; }
+        .nav-item a:hover { background: #1e293b; color: white; border-left-color: var(--accent); }
+
+        /* Content Styling */
+        .content { flex-grow: 1; padding: 40px 60px; overflow-y: auto; scroll-behavior: smooth; }
+        .container { max-width: 960px; margin: 0 auto; padding-bottom: 100px; }
+
+        .section { margin-bottom: 60px; scroll-margin-top: 20px; }
+        .section-title { font-size: 2rem; font-weight: 800; color: #0f172a; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid #e2e8f0; }
+        .section-desc { font-size: 1.05rem; line-height: 1.6; color: #64748b; margin-bottom: 30px; }
+
+        /* Endpoint Card */
+        .endpoint { background: white; border: 1px solid #e2e8f0; border-radius: 12px; margin-bottom: 30px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); transition: transform 0.2s; }
+        .endpoint:hover { border-color: #cbd5e1; }
+        
+        .endpoint-header { padding: 15px 20px; background: #f8fafc; border-bottom: 1px solid #f1f5f9; display: flex; align-items: center; justify-content: space-between; }
+        .endpoint-title { font-weight: 600; color: #334155; font-size: 1rem; }
+        
+        .method-badge { font-weight: 700; font-size: 0.75rem; padding: 4px 8px; border-radius: 4px; text-transform: uppercase; color: white; min-width: 60px; text-align: center; margin-right: 12px; }
+        .GET { background-color: #3b82f6; }
+        .POST { background-color: #10b981; }
+        .PUT { background-color: #f59e0b; }
+        .DELETE { background-color: #ef4444; }
+
+        .url { font-family: 'Consolas', 'Monaco', monospace; color: #475569; font-size: 0.95rem; }
+
+        .endpoint-body { padding: 20px; }
+        .desc { margin-bottom: 15px; font-size: 0.95rem; color: #475569; }
+
+        /* Code Block */
+        .code-block { background: var(--code-bg); border-radius: 8px; padding: 15px; position: relative; margin-top: 10px; border: 1px solid #333; }
+        .code-label { position: absolute; top: 0; right: 0; background: #333; color: #aaa; font-size: 0.7rem; padding: 4px 10px; border-bottom-left-radius: 8px; font-family: sans-serif; }
+        pre { color: var(--code-text); font-family: 'Consolas', monospace; font-size: 0.9rem; white-space: pre-wrap; word-break: break-all; margin: 0; }
+        .json-key { color: #9cdcfe; }
+        .json-string { color: #ce9178; }
+        .json-number { color: #b5cea8; }
+        .json-boolean { color: #569cd6; }
+
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 0.7rem; font-weight: 600; margin-left: 10px; }
+        .badge-admin { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
+        .badge-auth { background: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe; }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: var(--bg); }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+<body>
+
+    <nav class="sidebar">
+        <div class="sidebar-header">
+            <h2>Dinery API <span>v1.0</span></h2>
+        </div>
+        <div class="sidebar-nav">
+            <div class="nav-group">
+                <div class="nav-title">General</div>
+                <ul class="nav-list">
+                    <li class="nav-item"><a href="#intro">Introduction</a></li>
+                    <li class="nav-item"><a href="#auth">Authentication</a></li>
+                </ul>
+            </div>
+            <div class="nav-group">
+                <div class="nav-title">User Features</div>
+                <ul class="nav-list">
+                    <li class="nav-item"><a href="#couple">Couple Management</a></li>
+                    <li class="nav-item"><a href="#places">Wishlist / Places</a></li>
+                    <li class="nav-item"><a href="#visits">Journal / Visits</a></li>
+                    <li class="nav-item"><a href="#notifications">Notifications</a></li>
+                </ul>
+            </div>
+            <div class="nav-group">
+                <div class="nav-title">Utilities</div>
+                <ul class="nav-list">
+                    <li class="nav-item"><a href="#master">Master Data & Tags</a></li>
+                    <li class="nav-item"><a href="#storage">Storage (Upload)</a></li>
+                </ul>
+            </div>
+            <div class="nav-group">
+                <div class="nav-title">Administration</div>
+                <ul class="nav-list">
+                    <li class="nav-item"><a href="#admin">Admin Dashboard</a></li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <main class="content">
+        <div class="container">
+
+            <!-- INTRO -->
+            <section id="intro" class="section">
+                <h1 class="section-title">Introduction</h1>
+                <p class="section-desc">
+                    Selamat datang di dokumentasi API Dinery. API ini dirancang untuk aplikasi manajemen restoran couple (pasangan).
+                    <br><br>
+                    <strong>Base URL:</strong> <code>http://localhost:5000/api</code>
+                    <br>
+                    <strong>Auth Header:</strong> <code>Authorization: Bearer &lt;TOKEN&gt;</code>
+                </p>
+            </section>
+
+            <!-- AUTH -->
+            <section id="auth" class="section">
+                <h2 class="section-title">Authentication</h2>
+                <p class="section-desc">Endpoint untuk pendaftaran dan login user.</p>
+
+                <div class="endpoint">
+                    <div class="endpoint-header">
+                        <div style="display:flex; align-items:center">
+                            <span class="method-badge POST">POST</span>
+                            <span class="url">/auth/register</span>
+                        </div>
+                        <span class="endpoint-title">Register User</span>
+                    </div>
+                    <div class="endpoint-body">
+                        <div class="code-block">
+                            <span class="code-label">Body</span>
+<pre>{
+  "email": "user@example.com",
+  "password": "password123"
+}</pre>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="endpoint">
+                    <div class="endpoint-header">
+                        <div style="display:flex; align-items:center">
+                            <span class="method-badge POST">POST</span>
+                            <span class="url">/auth/login</span>
+                        </div>
+                        <span class="endpoint-title">Login</span>
+                    </div>
+                    <div class="endpoint-body">
+                        <div class="code-block">
+                            <span class="code-label">Response</span>
+<pre>{
+  "message": "Login Berhasil!",
+  "token": "eyJhbGciOiVIUz...", // <-- Simpan ini!
+  "user": { "id": "uuid...", "email": "..." }
+}</pre>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="endpoint">
+                    <div class="endpoint-header">
+                        <div style="display:flex; align-items:center">
+                            <span class="method-badge GET">GET</span>
+                            <span class="url">/auth/me</span>
+                        </div>
+                        <span class="endpoint-title">Get My Profile</span>
+                    </div>
+                    <div class="endpoint-body">
+                        <p class="desc">Mendapatkan data user yang sedang login.</p>
+                    </div>
+                </div>
+
+                <div class="endpoint">
+                    <div class="endpoint-header">
+                        <div style="display:flex; align-items:center">
+                            <span class="method-badge PUT">PUT</span>
+                            <span class="url">/auth/profile</span>
+                        </div>
+                        <span class="endpoint-title">Update Profile</span>
+                    </div>
+                    <div class="endpoint-body">
+                        <div class="code-block">
+                            <span class="code-label">Body</span>
+<pre>{
+  "display_name": "Rangga",
+  "birth_date": "1995-10-20",
+  "phone": "08123456789",
+  "avatar_url": "https://..." // Dari endpoint Storage
+}</pre>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- COUPLE -->
+            <section id="couple" class="section">
+                <h2 class="section-title">Couple Management</h2>
+                <p class="section-desc">Mengatur hubungan pasangan.</p>
+
+                <div class="endpoint">
+                    <div class="endpoint-header">
+                        <div style="display:flex; align-items:center">
+                            <span class="method-badge GET">GET</span>
+                            <span class="url">/couples/my-status</span>
+                        </div>
+                        <span class="endpoint-title">Check Status</span>
+                    </div>
+                    <div class="endpoint-body">
+                        <p class="desc">Cek apakah user sudah punya pasangan atau belum.</p>
+                    </div>
+                </div>
+
+                <div class="endpoint">
+                    <div class="endpoint-header">
+                        <div style="display:flex; align-items:center">
+                            <span class="method-badge POST">POST</span>
+                            <span class="url">/couples/create</span>
+                        </div>
+                        <span class="endpoint-title">Create Couple</span>
+                    </div>
+                    <div class="endpoint-body">
+                        <p class="desc">User membuat couple baru. Mendapatkan <code>invite_code</code>.</p>
+                        <div class="code-block">
+<pre>{
+  "name": "Rangga & Cinta"
+}</pre>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="endpoint">
+                    <div class="endpoint-header">
+                        <div style="display:flex; align-items:center">
+                            <span class="method-badge POST">POST</span>
+                            <span class="url">/couples/join</span>
+                        </div>
+                        <span class="endpoint-title">Join Couple</span>
+                    </div>
+                    <div class="endpoint-body">
+                        <p class="desc">User bergabung menggunakan kode invite.</p>
+                        <div class="code-block">
+<pre>{
+  "invite_code": "XY78Z"
+}</pre>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="endpoint">
+                    <div class="endpoint-header">
+                        <div style="display:flex; align-items:center">
+                            <span class="method-badge PUT">PUT</span>
+                            <span class="url">/couples</span>
+                        </div>
+                        <span class="endpoint-title">Update Name</span>
+                    </div>
+                    <div class="endpoint-body">
+                        <div class="code-block">
+<pre>{
+  "name": "Keluarga Cemara"
+}</pre>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- PLACES -->
+            <section id="places" class="section">
+                <h2 class="section-title">Wishlist / Places</h2>
+                <p class="section-desc">Manajemen tempat makan yang ingin dikunjungi.</p>
+
+                <div class="endpoint">
+                    <div class="endpoint-header">
+                        <div style="display:flex; align-items:center">
+                            <span class="method-badge POST">POST</span>
+                            <span class="url">/places/preview</span>
+                        </div>
+                        <span class="endpoint-title">Scraping Preview</span>
+                    </div>
+                    <div class="endpoint-body">
+                        <p class="desc">Mengambil metadata (Title & Image) dari link TikTok/IG/Maps.</p>
+                        <div class="code-block">
+<pre>{ "url": "https://..." }</pre>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="endpoint">
+                    <div class="endpoint-header">
+                        <div style="display:flex; align-items:center">
+                            <span class="method-badge POST">POST</span>
+                            <span class="url">/places</span>
+                        </div>
+                        <span class="endpoint-title">Add to Wishlist</span>
+                    </div>
+                    <div class="endpoint-body">
+                        <p class="desc">Menyimpan tempat baru.</p>
+                        <div class="code-block">
+<pre>{
+  "original_link": "https://tiktok...",
+  "platform": "TikTok",
+  "meta_title": "Bakso Viral",
+  "meta_image": "https://...",
+  "maps_link": "https://maps.app.goo.gl/...",
+  "name": "Bakso Pak Kumis",
+  "category_id": 1,
+  "price_range_id": 2,
+  "tag_ids": [1, 3] // Opsional
+}</pre>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="endpoint">
+                    <div class="endpoint-header">
+                        <div style="display:flex; align-items:center">
+                            <span class="method-badge GET">GET</span>
+                            <span class="url">/places</span>
+                        </div>
+                        <span class="endpoint-title">Get Wishlist</span>
+                    </div>
+                    <div class="endpoint-body">
+                        <p class="desc">List semua tempat yang <strong>belum</strong> dikunjungi.</p>
+                    </div>
+                </div>
+
+                <div class="endpoint">
+                    <div class="endpoint-header">
+                        <div style="display:flex; align-items:center">
+                            <span class="method-badge GET">GET</span>
+                            <span class="url">/places/nearby</span>
+                        </div>
+                        <span class="endpoint-title">Radius Search</span>
+                    </div>
+                    <div class="endpoint-body">
+                        <p class="desc">Mencari tempat terdekat.</p>
+                        <div class="code-block">
+                            <span class="code-label">Query Params</span>
+<pre>?lat=-7.8
+&long=110.4
+&radius=5  // (Dalam KM)</pre>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="endpoint">
+                    <div class="endpoint-header">
+                        <div style="display:flex; align-items:center">
+                            <span class="method-badge GET">GET</span>
+                            <span class="url">/places/gacha</span>
+                        </div>
+                        <span class="endpoint-title">Gacha (Random)</span>
+                    </div>
+                    <div class="endpoint-body">
+                        <p class="desc">Memilih 1 tempat random dari wishlist.</p>
+                    </div>
+                </div>
+
+                 <div class="endpoint">
+                    <div class="endpoint-header">
+                        <div style="display:flex; align-items:center">
+                            <span class="method-badge PUT">PUT</span>
+                            <span class="url">/places/:id</span>
+                        </div>
+                        <span class="endpoint-title">Update Place</span>
+                    </div>
+                    <div class="endpoint-body">
+                        <div class="code-block">
+<pre>{
+  "name": "Nama Baru",
+  "tag_ids": [2] // Mengganti tag lama
+}</pre>
+                        </div>
+                    </div>
+                </div>
+
+                 <div class="endpoint">
+                    <div class="endpoint-header">
+                        <div style="display:flex; align-items:center">
+                            <span class="method-badge DELETE">DELETE</span>
+                            <span class="url">/places/:id</span>
+                        </div>
+                        <span class="endpoint-title">Delete Place</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- VISITS -->
+            <section id="visits" class="section">
+                <h2 class="section-title">Journal / Visits</h2>
+                <p class="section-desc">Mencatat review dan kenangan kunjungan.</p>
+
+                <div class="endpoint">
+                    <div class="endpoint-header">
+                        <div style="display:flex; align-items:center">
+                            <span class="method-badge POST">POST</span>
+                            <span class="url">/visits</span>
+                        </div>
+                        <span class="endpoint-title">Add Review</span>
+                    </div>
+                    <div class="endpoint-body">
+                        <div class="code-block">
+<pre>{
+  "place_id": 1,
+  "rating": 5,
+  "review_text": "Enak banget!",
+  "repeat_order": true,
+  "visit_date": "2023-10-25",
+  "photo_urls": ["https://..."]
+}</pre>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="endpoint">
+                    <div class="endpoint-header">
+                        <div style="display:flex; align-items:center">
+                            <span class="method-badge GET">GET</span>
+                            <span class="url">/visits/history</span>
+                        </div>
+                        <span class="endpoint-title">Get History</span>
+                    </div>
+                    <div class="endpoint-body">
+                        <p class="desc">List semua tempat yang <strong>sudah</strong> dikunjungi.</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- NOTIFICATIONS -->
+            <section id="notifications" class="section">
+                <h2 class="section-title">Notifications</h2>
+                <p class="section-desc">Sistem notifikasi in-app.</p>
+
+                <div class="endpoint">
+                    <div class="endpoint-header">
+                        <div style="display:flex; align-items:center">
+                            <span class="method-badge GET">GET</span>
+                            <span class="url">/notifications</span>
+                        </div>
+                        <span class="endpoint-title">Get Notifications</span>
+                    </div>
+                </div>
+
+                <div class="endpoint">
+                    <div class="endpoint-header">
+                        <div style="display:flex; align-items:center">
+                            <span class="method-badge PUT">PUT</span>
+                            <span class="url">/notifications/:id/read</span>
+                        </div>
+                        <span class="endpoint-title">Mark as Read</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- MASTER DATA & STORAGE -->
+            <section id="master" class="section">
+                <h2 class="section-title">Master Data & Storage</h2>
+
+                <div class="endpoint">
+                    <div class="endpoint-header">
+                        <div style="display:flex; align-items:center">
+                            <span class="method-badge GET">GET</span>
+                            <span class="url">/master/categories</span>
+                        </div>
+                        <span class="endpoint-title">Get Categories</span>
+                    </div>
+                </div>
+
+                <div class="endpoint">
+                    <div class="endpoint-header">
+                        <div style="display:flex; align-items:center">
+                            <span class="method-badge GET">GET</span>
+                            <span class="url">/master/tags</span>
+                        </div>
+                        <span class="endpoint-title">Get Tags (Hybrid)</span>
+                    </div>
+                    <div class="endpoint-body">
+                        <p class="desc">Mengembalikan Tag Global (Admin) DAN Custom Tag milik user.</p>
+                    </div>
+                </div>
+
+                <div class="endpoint">
+                    <div class="endpoint-header">
+                        <div style="display:flex; align-items:center">
+                            <span class="method-badge POST">POST</span>
+                            <span class="url">/master/tags</span>
+                        </div>
+                        <span class="endpoint-title">Create Custom Tag</span>
+                    </div>
+                    <div class="endpoint-body">
+                        <div class="code-block">
+<pre>{ "name": "Spesial", "color": "#ff0000" }</pre>
+                        </div>
+                    </div>
+                </div>
+            </section>
+            
+            <section id="storage" class="section">
+                <div class="endpoint">
+                    <div class="endpoint-header">
+                        <div style="display:flex; align-items:center">
+                            <span class="method-badge POST">POST</span>
+                            <span class="url">/storage/upload</span>
+                        </div>
+                        <span class="endpoint-title">Upload Image</span>
+                    </div>
+                    <div class="endpoint-body">
+                        <p class="desc">Gunakan <strong>multipart/form-data</strong>. Key: <code>image</code>.</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ADMIN -->
+            <section id="admin" class="section">
+                <h2 class="section-title">Admin Dashboard</h2>
+                <p class="section-desc">
+                    <span class="badge badge-admin">SUPERADMIN ONLY</span><br>
+                    Endpoint ini hanya bisa diakses oleh user yang terdaftar di tabel <code>app_admins</code>.
+                    <br>Base URL: <code>/api/admin</code>
+                </p>
+
+                <div class="endpoint">
+                    <div class="endpoint-header">
+                        <div style="display:flex; align-items:center">
+                            <span class="method-badge GET">GET</span>
+                            <span class="url">/admin/stats</span>
+                        </div>
+                        <span class="endpoint-title">Dashboard Stats</span>
+                    </div>
+                </div>
+
+                <div class="endpoint">
+                    <div class="endpoint-header">
+                        <div style="display:flex; align-items:center">
+                            <span class="method-badge GET">GET</span>
+                            <span class="url">/admin/users</span>
+                        </div>
+                        <span class="endpoint-title">List All Users</span>
+                    </div>
+                </div>
+
+                <div class="endpoint">
+                    <div class="endpoint-header">
+                        <div style="display:flex; align-items:center">
+                            <span class="method-badge GET">GET</span>
+                            <span class="url">/admin/users/:id</span>
+                        </div>
+                        <span class="endpoint-title">Get User Detail</span>
+                    </div>
+                </div>
+
+                <div class="endpoint">
+                    <div class="endpoint-header">
+                        <div style="display:flex; align-items:center">
+                            <span class="method-badge DELETE">DELETE</span>
+                            <span class="url">/admin/users/:id</span>
+                        </div>
+                        <span class="endpoint-title">Ban / Delete User</span>
+                    </div>
+                </div>
+
+                <div class="endpoint">
+                    <div class="endpoint-header">
+                        <div style="display:flex; align-items:center">
+                            <span class="method-badge POST">POST</span>
+                            <span class="url">/admin/categories</span>
+                        </div>
+                        <span class="endpoint-title">Create Category</span>
+                    </div>
+                </div>
+                
+                 <div class="endpoint">
+                    <div class="endpoint-header">
+                        <div style="display:flex; align-items:center">
+                            <span class="method-badge POST">POST</span>
+                            <span class="url">/admin/tags</span>
+                        </div>
+                        <span class="endpoint-title">Create Global Tag</span>
+                    </div>
+                </div>
+            </section>
+
+        </div>
+    </main>
+
+</body>
+</html>

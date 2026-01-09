@@ -177,6 +177,61 @@ const adminController = {
       res.status(500).json({ error: err.message });
     }
   },
+  getUserDetail: async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      // 1. Ambil Data User Basic
+      const { data: user, error: userError } = await supabase
+        .from('auth_users')
+        .select('*')
+        .eq('id', id)
+        .single();
+
+      if (userError || !user) return res.status(404).json({ message: "User tidak ditemukan" });
+
+      // 2. Ambil Info Couple (Jika ada)
+      const { data: coupleMember } = await supabase
+        .from('couple_members')
+        .select('role, joined_at, couples(id, name, invite_code)')
+        .eq('user_id', id)
+        .single();
+
+      // 3. Ambil Statistik User
+      // Berapa wishlist yang dia buat?
+      const { count: wishlistCount } = await supabase
+        .from('places')
+        .select('*', { count: 'exact', head: true })
+        .eq('created_by', id);
+
+      // Berapa review yang dia tulis?
+      const { count: reviewCount } = await supabase
+        .from('visits')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', id);
+
+      // 4. Susun Response
+      res.json({
+        message: "Detail User Ditemukan",
+        data: {
+          ...user, // Data diri (nama, email, hp, tgl lahir)
+          couple_info: coupleMember ? {
+            couple_id: coupleMember.couples.id,
+            couple_name: coupleMember.couples.name,
+            role_in_couple: coupleMember.role,
+            joined_at: coupleMember.joined_at
+          } : null,
+          activity_stats: {
+            total_wishlist_created: wishlistCount || 0,
+            total_reviews_written: reviewCount || 0
+          }
+        }
+      });
+
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  },
 
   // [DELETE] Ban/Hapus User (Hati-hati!)
   deleteUser: async (req, res) => {

@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const morgan = require('morgan');
+const path = require('path');
 require('dotenv').config();
 
 // Import Routes
@@ -34,11 +35,16 @@ app.use('/api/master', masterRoutes);  // [BARU]
 app.use('/api/admin', adminRoutes); // <--- [BARU]
 app.use('/api/storage', storageRoutes); // <--- [BARU]
 app.use('/api/notifications', notificationRoutes); // <--- [BARU]
-
+app.use(express.static(path.join(__dirname, '../public')));
+app.get('/docs', (req, res) => {
+  res.sendFile(path.join(__dirname, '../public/api-docs.html'));
+});
 // Error Handler
 app.use((req, res) => {
   res.status(404).json({ message: "Endpoint tidak ditemukan" });
 });
+
+
 
 app.listen(PORT, () => {
   console.log(`\n========================================`);
