@@ -5,7 +5,7 @@ const requireAuth = require('../middlewares/auth');
 
 router.use(requireAuth);
 
-router.post('/', visitController.addVisit);
-router.get('/history', visitController.getHistory);
+router.post('/', visitController.addVisit);      // Catat kunjungan
+router.get('/history', visitController.getHistory); // Lihat list history
 
 module.exports = router;
