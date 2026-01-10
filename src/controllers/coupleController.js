@@ -16,21 +16,45 @@ const coupleController = {
     try {
       const userId = req.user.id;
 
+      // 1. Ambil data membership user ini + data couple group
       const { data: member } = await supabase
         .from('couple_members')
-        .select('*, couples(name, invite_code)')
+        .select('*, couples(*)') // Join ke tabel couples
         .eq('user_id', userId)
         .single();
 
       if (!member) {
-        return res.json({ has_couple: false, message: "Kamu belum memiliki pasangan." });
+        return res.json({ 
+          has_couple: false, 
+          message: "Kamu belum memiliki pasangan." 
+        });
       }
+
+      // 2. [LOGIKA BARU] Cari Data Pasangan (Partner)
+      // Cari member lain di couple_id yang sama, tapi user_id-nya BUKAN saya
+      const { data: partnerMember } = await supabase
+        .from('couple_members')
+        .select('user_id, auth_users(display_name, avatar_url, email)')
+        .eq('couple_id', member.couple_id)
+        .neq('user_id', userId) // Not Equal (Bukan saya)
+        .single();
 
       res.json({ 
         has_couple: true, 
         role: member.role,
-        couple_data: member.couples 
+        
+        // Info Grup (Shared)
+        couple_data: member.couples, 
+        
+        // Info Pasangan (Personal)
+        partner_data: partnerMember ? {
+          user_id: partnerMember.user_id,
+          display_name: partnerMember.auth_users?.display_name || "Pasanganmu",
+          avatar_url: partnerMember.auth_users?.avatar_url,
+          email: partnerMember.auth_users?.email
+        } : null // Null artinya pasangan belum join
       });
+
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
