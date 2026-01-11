@@ -17,7 +17,8 @@ const geoService = {
           validateStatus: (status) => status >= 200 && status < 400,
           headers: {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept-Language': 'en-US,en;q=0.9'
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5'
           }
         });
         
@@ -29,11 +30,12 @@ const geoService = {
         return null;
       }
 
-      // ==========================================
-      // STRATEGI 1: CEK URL (Pola Umum)
-      // ==========================================
-      let lat = null, long = null;
+      let lat = null;
+      let long = null;
 
+      // ==========================================
+      // STRATEGI 1: CEK URL (Paling Akurat)
+      // ==========================================
       const regexPatterns = [
         /@(-?\d+\.\d+),(-?\d+\.\d+)/,       // @-7.123,110.123
         /!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/,   // !3d...!4d...
@@ -48,81 +50,70 @@ const geoService = {
           lat = parseFloat(match[1]);
           long = parseFloat(match[2]);
           console.log(`[GeoService] ✅ Koordinat ditemukan di URL (Pola: ${regex})`);
-          break;
+          return { lat, long };
         }
       }
 
       // ==========================================
-      // STRATEGI 2: CEK HTML BODY (Fallback Kuat)
+      // STRATEGI 2: AGGRESSIVE HTML SCAN (Fallback)
       // ==========================================
+      console.log("[GeoService] ⚠️ URL clean, memulai scan HTML agresif...");
+
+      // Regex ini mencari DUA angka desimal yang dipisahkan oleh koma dan spasi opsional
+      // Contoh yang tertangkap:
+      // [ -7.75, 110.40 ]
+      // center=-7.75,110.40
+      // "lat":-7.75,"lng":110.40
+      // -7.75, 110.40
       
-      if (!lat || !long) {
-        console.log("[GeoService] ⚠️ URL clean, mencoba bedah HTML...");
+      const broadRegex = /(-?\d+\.\d{3,})\s*(?:,|%2C|\\u002C)\s*(-?\d+\.\d{3,})/g;
+      
+      const matches = [...htmlContent.matchAll(broadRegex)];
+      
+      // Kita cari kandidat yang Valid (Masuk akal sebagai koordinat Indonesia)
+      // Batas Wilayah Indonesia (Kasar):
+      // Lat: -11 (Selatan) s/d 6 (Utara)
+      // Long: 95 (Barat) s/d 141 (Timur)
+      
+      for (const m of matches) {
+        const tempLat = parseFloat(m[1]);
+        const tempLong = parseFloat(m[2]);
 
-        // A. Cek Meta Tag (og:image) - Seringkali berisi static map
-        // Pattern: center=-7.123,110.123 atau center=-7.123%2C110.123
-        const metaRegex = /content=".*?center=(-?\d+\.\d+)(?:%2C|,)(-?\d+\.\d+)/;
-        const metaMatch = htmlContent.match(metaRegex);
-
-        if (metaMatch) {
-          lat = parseFloat(metaMatch[1]);
-          long = parseFloat(metaMatch[2]);
-          console.log(`[GeoService] ✅ Koordinat ditemukan di Meta Tag`);
-        } 
-        
-        // B. Cek Script JSON (Pola [null, null, lat, long])
-        // Ini adalah pola internal Google Maps untuk detail lokasi
-        else {
-          // Cari pola: [null, null, -7.xxx, 110.xxx]
-          const deepJsonRegex = /\[\s*null\s*,\s*null\s*,\s*(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)\s*\]/;
-          const deepMatch = htmlContent.match(deepJsonRegex);
-
-          if (deepMatch) {
-            lat = parseFloat(deepMatch[1]);
-            long = parseFloat(deepMatch[2]);
-            console.log(`[GeoService] ✅ Koordinat ditemukan di Deep JSON: ${lat}, ${long}`);
-          }
-          
-          // C. Fallback Terakhir: Cari SEMUA pola [angka, angka]
-          else {
-            console.log("[GeoService] ⚠️ Mencoba scan semua array angka...");
-            // Regex: [ -7.1234, 110.1234 ]
-            // Menangkap angka desimal dengan presisi minimal 4 digit agar tidak menangkap tahun/ID
-            const allMatches = [...htmlContent.matchAll(/\[\s*(-?\d+\.\d{4,})\s*,\s*(-?\d+\.\d{4,})\s*\]/g)];
+        // 1. Cek apakah angka valid secara geografis
+        if (tempLat >= -90 && tempLat <= 90 && tempLong >= -180 && tempLong <= 180) {
             
-            for (const m of allMatches) {
-              const tempLat = parseFloat(m[1]);
-              const tempLong = parseFloat(m[2]);
-
-              // Filter Validasi Geografis (Valid Lat/Long Bumi)
-              if (tempLat >= -90 && tempLat <= 90 && tempLong >= -180 && tempLong <= 180) {
-                  // Prioritas: Koordinat Indonesia (Lat -11 s/d 6, Long 95 s/d 141)
-                  // Biar gak salah ambil koordinat default Google (US/Europe)
-                  if (tempLat >= -11 && tempLat <= 6 && tempLong >= 95 && tempLong <= 141) {
-                    lat = tempLat;
-                    long = tempLong;
-                    console.log(`[GeoService] ✅ Koordinat ditemukan (Heuristic ID): ${lat}, ${long}`);
-                    break;
-                  }
-                  
-                  // Jika belum ketemu yg Indonesia, simpan yang valid bumi dulu
-                  if (!lat) {
-                    lat = tempLat;
-                    long = tempLong;
-                  }
-              }
+            // 2. Cek apakah masuk wilayah Indonesia (Prioritas Tinggi)
+            if (tempLat >= -11 && tempLat <= 6 && tempLong >= 95 && tempLong <= 141) {
+                lat = tempLat;
+                long = tempLong;
+                console.log(`[GeoService] 🎯 Koordinat Valid (Indonesia) ditemukan di HTML: ${lat}, ${long}`);
+                break; // Ketemu satu yang pas, langsung ambil!
             }
-          }
         }
       }
 
-      // FINAL CHECK & RETURN
+      // Fallback jika tidak ada yang masuk range Indonesia, tapi ada angka valid bumi
+      // (Misal user input lokasi di luar negeri)
+      if (!lat && matches.length > 0) {
+         for (const m of matches) {
+            const tempLat = parseFloat(m[1]);
+            const tempLong = parseFloat(m[2]);
+            if (tempLat >= -90 && tempLat <= 90 && tempLong >= -180 && tempLong <= 180) {
+                // Hindari koordinat 0,0 atau angka default Google
+                if (tempLat !== 0 && tempLong !== 0) {
+                    lat = tempLat;
+                    long = tempLong;
+                    console.log(`[GeoService] ⚠️ Koordinat Luar/Umum ditemukan: ${lat}, ${long}`);
+                    break;
+                }
+            }
+         }
+      }
+
       if (lat && long) {
         return { lat, long };
       } else {
-        console.log(`[GeoService] ❌ Gagal Total. HTML content length: ${htmlContent.length}`);
-        // Log sebagian HTML untuk debug (optional)
-        // console.log(htmlContent.substring(0, 500));
+        console.log(`[GeoService] ❌ Gagal Total. Tidak ada pola angka koordinat yang valid.`);
         return null;
       }
 
