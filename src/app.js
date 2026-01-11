@@ -13,6 +13,7 @@ const masterRoutes = require('./routes/masterRoutes'); // [BARU]
 const adminRoutes = require('./routes/adminRoutes');
 const storageRoutes = require('./routes/storageRoutes'); // <--- [BARU]
 const notificationRoutes = require('./routes/notificationRoutes');
+const dashboardRoutes = require('./routes/dashboardRoutes'); // <--- [BARU]
 
 // Inisialisasi
 const app = express();
@@ -35,6 +36,7 @@ app.use('/api/master', masterRoutes);  // [BARU]
 app.use('/api/admin', adminRoutes); // <--- [BARU]
 app.use('/api/storage', storageRoutes); // <--- [BARU]
 app.use('/api/notifications', notificationRoutes); // <--- [BARU]
+app.use('/api/dashboard', dashboardRoutes); // <--- [BARU]
 app.use(express.static(path.join(__dirname, '../public')));
 app.get('/docs', (req, res) => {
   res.sendFile(path.join(__dirname, '../public/api-docs.html'));
