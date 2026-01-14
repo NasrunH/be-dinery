@@ -10,18 +10,16 @@ const geoService = {
       let finalUrl = mapsLink;
       let htmlContent = "";
 
-      // 1. HTTP REQUEST
-      // Trik: Kita menyamar sebagai "Facebook Bot" (facebookexternalhit).
-      // Kenapa? Karena Google Maps PASTI memberikan HTML sederhana yang berisi 
-      // meta tag koordinat akurat agar preview link muncul di Facebook/WhatsApp.
+      // 1. HTTP REQUEST (Desktop User Agent - Paling lengkap datanya)
       try {
         const response = await axios.get(mapsLink, {
           maxRedirects: 10,
           validateStatus: (status) => status >= 200 && status < 400,
           headers: {
-            'User-Agent': 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
+            // Gunakan User Agent Desktop Chrome terbaru agar Google merender full HTML
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5'
+            'Accept-Language': 'en-US,en;q=0.9'
           }
         });
         
@@ -37,67 +35,99 @@ const geoService = {
       let long = null;
 
       // =================================================================
-      // STRATEGI 1: CEK URL UTAMA (Jika redirect menghasilkan koordinat)
+      // STRATEGI 1: CEK URL (Paling Akurat & Cepat)
       // =================================================================
-      const regexUrl = /@(-?\d+\.\d+),(-?\d+\.\d+)/;
-      const matchUrl = finalUrl.match(regexUrl);
-      if (matchUrl) {
-        lat = parseFloat(matchUrl[1]);
-        long = parseFloat(matchUrl[2]);
-        console.log(`[GeoService] ✅ Koordinat dari URL: ${lat}, ${long}`);
-        return { lat, long };
+      const regexPatterns = [
+        /@(-?\d+\.\d+),(-?\d+\.\d+)/,       // @-7.123,110.123
+        /!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/,   // !3d...!4d...
+        /[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/,  // ?q=...
+        /[?&]ll=(-?\d+\.\d+),(-?\d+\.\d+)/, // ?ll=...
+        /sll=(-?\d+\.\d+),(-?\d+\.\d+)/     // sll=...
+      ];
+
+      for (const regex of regexPatterns) {
+        const match = finalUrl.match(regex);
+        if (match) {
+          lat = parseFloat(match[1]);
+          long = parseFloat(match[2]);
+          console.log(`[GeoService] ✅ Koordinat ditemukan di URL (Pola: ${regex})`);
+          return { lat, long };
+        }
       }
 
       // =================================================================
-      // STRATEGI 2: CEK META TAG (Kunci untuk Link Mobile!)
+      // STRATEGI 2: CEK DEEP JSON (Khas Google Maps Desktop)
       // =================================================================
-      // Kita cari tag <meta property="og:image" content="...">
-      // Isinya biasanya: https://maps.google.com/maps/api/staticmap?center=-7.76,110.37&zoom=...
+      // Google menyimpan koordinat di array JSON: [null, null, lat, long]
+      // Ini biasanya ada di dalam window.APP_INITIALIZATION_STATE
       
-      console.log("[GeoService] ⚠️ URL clean, mencari di Meta Tags (Mobile Strategy)...");
+      console.log("[GeoService] ⚠️ URL clean, scan Deep JSON HTML...");
 
-      // Cari URL gambar di dalam HTML
-      const metaImageRegex = /property="og:image"\s+content="(.*?)"/;
+      // Regex untuk menangkap [null, null, -7.xxx, 110.xxx]
+      // Toleransi spasi (\s*)
+      const deepJsonRegex = /\[\s*null\s*,\s*null\s*,\s*(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)\s*\]/g;
+      
+      const deepMatches = [...htmlContent.matchAll(deepJsonRegex)];
+      
+      for (const m of deepMatches) {
+        const tempLat = parseFloat(m[1]);
+        const tempLong = parseFloat(m[2]);
+
+        // Validasi Koordinat Indonesia
+        // Lat: -11 s/d 6, Long: 95 s/d 141
+        if (tempLat >= -11 && tempLat <= 6 && tempLong >= 95 && tempLong <= 141) {
+            lat = tempLat;
+            long = tempLong;
+            console.log(`[GeoService] 🎯 Koordinat Valid (Deep JSON): ${lat}, ${long}`);
+            return { lat, long };
+        }
+      }
+
+      // =================================================================
+      // STRATEGI 3: CEK META TAGS (Fallback jika JSON gagal)
+      // =================================================================
+      // Cari og:image atau twitter:image
+      const metaImageRegex = /content="(https?:\/\/.*?maps\.google\.com.*?)"/;
       const metaMatch = htmlContent.match(metaImageRegex);
 
       if (metaMatch && metaMatch[1]) {
         const imageUrl = metaMatch[1];
-        // console.log(`[GeoService] 🖼️  OG Image URL ditemukan: ${imageUrl}`);
-
-        // Ekstrak 'center' atau 'markers' dari URL gambar tersebut
-        // Pola: center=-7.123,110.123 atau center=-7.123%2C110.123
+        // Ekstrak center=lat,long
         const coordRegex = /[?&](?:center|markers)=(-?\d+\.\d+)(?:%2C|,)(-?\d+\.\d+)/;
         const coordMatch = imageUrl.match(coordRegex);
 
         if (coordMatch) {
           lat = parseFloat(coordMatch[1]);
           long = parseFloat(coordMatch[2]);
-          console.log(`[GeoService] 🎯 Koordinat Valid dari Meta Image: ${lat}, ${long}`);
+          console.log(`[GeoService] ✅ Koordinat ditemukan di Meta Image: ${lat}, ${long}`);
           return { lat, long };
         }
       }
 
       // =================================================================
-      // STRATEGI 3: AGGRESSIVE HTML SCAN (Fallback Terakhir)
+      // STRATEGI 4: AGGRESSIVE SCAN (The Last Resort)
       // =================================================================
-      // Scan semua angka desimal yang berdekatan dan valid di Indonesia
+      // Cari sembarang pasangan angka desimal yang valid di Indonesia
+      // Format: angka, angka (bisa dipisah koma, spasi, atau encoded char)
       
-      console.log("[GeoService] ⚠️ Meta tag gagal, scan HTML agresif...");
+      console.log("[GeoService] ⚠️ JSON & Meta gagal, scan Brutal...");
       
-      const broadRegex = /(-?\d+\.\d{4,})\s*(?:,|%2C|\\u002C)\s*(-?\d+\.\d{4,})/g;
+      // Regex mencari: (angka desimal minimal 3 digit) pemisah (angka desimal minimal 3 digit)
+      const broadRegex = /(-?\d+\.\d{3,})\s*(?:,|%2C|\\u002C|\s)\s*(-?\d+\.\d{3,})/g;
       const matches = [...htmlContent.matchAll(broadRegex)];
       
       for (const m of matches) {
         const tempLat = parseFloat(m[1]);
         const tempLong = parseFloat(m[2]);
 
-        // Validasi Wilayah Indonesia (Kasar)
-        // Lat: -11 s/d 6, Long: 95 s/d 141
+        // Validasi Ketat Wilayah Indonesia
+        // Lat: -11 s/d 6
+        // Long: 95 s/d 141
         if (tempLat >= -11 && tempLat <= 6 && tempLong >= 95 && tempLong <= 141) {
             lat = tempLat;
             long = tempLong;
             console.log(`[GeoService] 🔍 Koordinat Heuristik (Indonesia): ${lat}, ${long}`);
-            break; 
+            return { lat, long };
         }
       }
 
