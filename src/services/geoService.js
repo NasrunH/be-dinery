@@ -68,7 +68,8 @@ const geoService = {
         }
 
         // 3. Cek Meta Tags (og:image & twitter:image & itemprop=image)
-        const metaRegex = /content="(https?:\/\/.*?(?:maps\.google|googleusercontent).*?)"/;
+        // FIX: Added 'g' flag to enable matchAll
+        const metaRegex = /content="(https?:\/\/.*?(?:maps\.google|googleusercontent).*?)"/g;
         const allMetaMatches = [...html.matchAll(metaRegex)];
         
         for (const m of allMetaMatches) {
