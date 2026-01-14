@@ -10,22 +10,29 @@ const geoService = {
       let finalUrl = mapsLink;
       let htmlContent = "";
 
-      // 1. HTTP REQUEST (Desktop User Agent - Paling lengkap datanya)
+      // 1. HTTP REQUEST
       try {
         const response = await axios.get(mapsLink, {
           maxRedirects: 10,
           validateStatus: (status) => status >= 200 && status < 400,
           headers: {
-            // Gunakan User Agent Desktop Chrome terbaru agar Google merender full HTML
+            // User Agent Desktop paling umum
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.9'
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+            // Cookie 'CONSENT' palsu untuk melewati halaman "Before you continue" Google
+            'Cookie': 'CONSENT=YES+cb.20210720-07-p0.en+FX+417; SOCS=CAESHAgBEhJnd3NfMjAyMzA4MjktMF9SQzIaAmVuIAEaBgiAo_WmBg;' 
           }
         });
         
         finalUrl = response.request.res.responseUrl || mapsLink;
         htmlContent = response.data;
-        // console.log(`[GeoService] ➡️  Link Akhir: ${finalUrl}`);
+        
+        // Debug: Cek Judul Halaman
+        const titleMatch = htmlContent.match(/<title>(.*?)<\/title>/);
+        const pageTitle = titleMatch ? titleMatch[1] : "No Title";
+        console.log(`[GeoService] 📄 Page Title: "${pageTitle}"`);
+
       } catch (err) {
         console.error(`[GeoService] ⚠️ Gagal fetch URL: ${err.message}`);
         return null;
@@ -35,14 +42,12 @@ const geoService = {
       let long = null;
 
       // =================================================================
-      // STRATEGI 1: CEK URL (Paling Akurat & Cepat)
+      // STRATEGI 1: CEK URL (Pola @lat,long)
       // =================================================================
       const regexPatterns = [
-        /@(-?\d+\.\d+),(-?\d+\.\d+)/,       // @-7.123,110.123
-        /!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/,   // !3d...!4d...
-        /[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/,  // ?q=...
-        /[?&]ll=(-?\d+\.\d+),(-?\d+\.\d+)/, // ?ll=...
-        /sll=(-?\d+\.\d+),(-?\d+\.\d+)/     // sll=...
+        /@(-?\d+\.\d+),(-?\d+\.\d+)/,
+        /!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/,
+        /[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/
       ];
 
       for (const regex of regexPatterns) {
@@ -50,93 +55,97 @@ const geoService = {
         if (match) {
           lat = parseFloat(match[1]);
           long = parseFloat(match[2]);
-          console.log(`[GeoService] ✅ Koordinat ditemukan di URL (Pola: ${regex})`);
+          console.log(`[GeoService] ✅ Koordinat ditemukan di URL: ${lat}, ${long}`);
           return { lat, long };
         }
       }
 
       // =================================================================
-      // STRATEGI 2: CEK DEEP JSON (Khas Google Maps Desktop)
+      // STRATEGI 2: HTML META SCAN (Pola meta tag)
       // =================================================================
-      // Google menyimpan koordinat di array JSON: [null, null, lat, long]
-      // Ini biasanya ada di dalam window.APP_INITIALIZATION_STATE
-      
-      console.log("[GeoService] ⚠️ URL clean, scan Deep JSON HTML...");
-
-      // Regex untuk menangkap [null, null, -7.xxx, 110.xxx]
-      // Toleransi spasi (\s*)
-      const deepJsonRegex = /\[\s*null\s*,\s*null\s*,\s*(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)\s*\]/g;
-      
-      const deepMatches = [...htmlContent.matchAll(deepJsonRegex)];
-      
-      for (const m of deepMatches) {
-        const tempLat = parseFloat(m[1]);
-        const tempLong = parseFloat(m[2]);
-
-        // Validasi Koordinat Indonesia
-        // Lat: -11 s/d 6, Long: 95 s/d 141
-        if (tempLat >= -11 && tempLat <= 6 && tempLong >= 95 && tempLong <= 141) {
-            lat = tempLat;
-            long = tempLong;
-            console.log(`[GeoService] 🎯 Koordinat Valid (Deep JSON): ${lat}, ${long}`);
-            return { lat, long };
-        }
-      }
-
-      // =================================================================
-      // STRATEGI 3: CEK META TAGS (Fallback jika JSON gagal)
-      // =================================================================
-      // Cari og:image atau twitter:image
+      // Cari og:image yang berisi static map
       const metaImageRegex = /content="(https?:\/\/.*?maps\.google\.com.*?)"/;
       const metaMatch = htmlContent.match(metaImageRegex);
 
       if (metaMatch && metaMatch[1]) {
         const imageUrl = metaMatch[1];
-        // Ekstrak center=lat,long
         const coordRegex = /[?&](?:center|markers)=(-?\d+\.\d+)(?:%2C|,)(-?\d+\.\d+)/;
         const coordMatch = imageUrl.match(coordRegex);
-
         if (coordMatch) {
           lat = parseFloat(coordMatch[1]);
           long = parseFloat(coordMatch[2]);
-          console.log(`[GeoService] ✅ Koordinat ditemukan di Meta Image: ${lat}, ${long}`);
+          console.log(`[GeoService] ✅ Koordinat dari Meta Image: ${lat}, ${long}`);
           return { lat, long };
         }
       }
 
       // =================================================================
-      // STRATEGI 4: AGGRESSIVE SCAN (The Last Resort)
+      // STRATEGI 3: JSON STATE SCAN (Deep Search)
       // =================================================================
-      // Cari sembarang pasangan angka desimal yang valid di Indonesia
-      // Format: angka, angka (bisa dipisah koma, spasi, atau encoded char)
+      // Mencari pola [null,null,lat,long]
+      const deepJsonRegex = /\[\s*null\s*,\s*null\s*,\s*(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)\s*\]/g;
+      const deepMatches = [...htmlContent.matchAll(deepJsonRegex)];
       
-      console.log("[GeoService] ⚠️ JSON & Meta gagal, scan Brutal...");
-      
-      // Regex mencari: (angka desimal minimal 3 digit) pemisah (angka desimal minimal 3 digit)
-      const broadRegex = /(-?\d+\.\d{3,})\s*(?:,|%2C|\\u002C|\s)\s*(-?\d+\.\d{3,})/g;
-      const matches = [...htmlContent.matchAll(broadRegex)];
-      
-      for (const m of matches) {
+      for (const m of deepMatches) {
         const tempLat = parseFloat(m[1]);
         const tempLong = parseFloat(m[2]);
-
-        // Validasi Ketat Wilayah Indonesia
-        // Lat: -11 s/d 6
-        // Long: 95 s/d 141
-        if (tempLat >= -11 && tempLat <= 6 && tempLong >= 95 && tempLong <= 141) {
-            lat = tempLat;
-            long = tempLong;
-            console.log(`[GeoService] 🔍 Koordinat Heuristik (Indonesia): ${lat}, ${long}`);
-            return { lat, long };
+        if (isValidIndo(tempLat, tempLong)) {
+            console.log(`[GeoService] 🎯 Koordinat Valid (Deep JSON): ${tempLat}, ${tempLong}`);
+            return { lat: tempLat, long: tempLong };
         }
       }
 
-      if (lat && long) {
-        return { lat, long };
-      } else {
-        console.log(`[GeoService] ❌ Gagal Total.`);
-        return null;
+      // =================================================================
+      // STRATEGI 4: PAIRING NUMBER SCAN (Brutal)
+      // =================================================================
+      // Cari SEMUA angka desimal, masukkan ke array, lalu cari pasangan yang valid
+      console.log("[GeoService] ⚠️ Mencoba Pairing Scan (Brutal)...");
+      
+      // Ambil semua angka desimal yang punya minimal 4 digit di belakang koma (presisi tinggi)
+      // Ini untuk menghindari ambil tahun (2024), ID pendek, atau harga
+      const allNumbersRegex = /(-?\d+\.\d{4,})/g; 
+      const allNumbers = [...htmlContent.matchAll(allNumbersRegex)].map(m => parseFloat(m[1]));
+
+      // Loop cari pasangan berurutan
+      for (let i = 0; i < allNumbers.length - 1; i++) {
+        const val1 = allNumbers[i];
+        const val2 = allNumbers[i+1]; // Cek angka sebelahnya
+
+        // Cek pasangan [Lat, Long]
+        if (isValidIndo(val1, val2)) {
+           console.log(`[GeoService] 🔍 Koordinat Heuristik (Urutan ${i}): ${val1}, ${val2}`);
+           return { lat: val1, long: val2 };
+        }
       }
+
+      // =================================================================
+      // STRATEGI 5: CID / PLACE ID FALLBACK (Trik URL)
+      // =================================================================
+      // Jika semua gagal, cek apakah ada CID di URL (0x...:0x...)
+      // Contoh: ...!1s0x2e7a59...:0x22a2739327387229...
+      const cidRegex = /:0x([0-9a-fA-F]+)/;
+      const cidMatch = finalUrl.match(cidRegex);
+      
+      if (cidMatch) {
+        try {
+            // Konversi Hex ke Decimal (Butuh BigInt karena angkanya besar)
+            const cidDecimal = BigInt(`0x${cidMatch[1]}`).toString();
+            console.log(`[GeoService] 💡 CID ditemukan: ${cidDecimal}. Mencoba URL alternatif...`);
+            
+            // URL ini biasanya redirect ke tampilan map yang URL-nya ada koordinat
+            // atau HTML-nya lebih sederhana
+            const altUrl = `https://maps.google.com/?cid=${cidDecimal}`;
+            
+            // Kita return null dulu di sini, tapi di log menyarankan manual
+            // (Karena fetch ulang berisiko timeout 10 detik Vercel)
+            console.log(`[GeoService] ⚠️ Coba gunakan link ini manual: ${altUrl}`);
+        } catch (e) {
+            console.log("[GeoService] Gagal parse CID");
+        }
+      }
+
+      console.log(`[GeoService] ❌ Gagal Total. HTML Length: ${htmlContent.length}`);
+      return null;
 
     } catch (error) {
       console.error("[GeoService] Critical Error:", error.message);
@@ -144,5 +153,13 @@ const geoService = {
     }
   }
 };
+
+// Helper: Cek apakah koordinat masuk akal (Indonesia & Sekitarnya)
+function isValidIndo(lat, long) {
+    // Lat: -11 s/d 6
+    // Long: 95 s/d 141
+    // Kita longgarkan sedikit buffer-nya untuk Malaysia/Singapura/Timor Leste
+    return (lat >= -15 && lat <= 10 && long >= 90 && long <= 150);
+}
 
 module.exports = geoService;
