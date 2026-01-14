@@ -78,6 +78,7 @@ const placeController = {
         if (tagError) console.error("Gagal simpan tags:", tagError.message);
       }
 
+      // 5. Kirim Notifikasi
       const { data: userData } = await supabase.from('auth_users').select('display_name').eq('id', userId).single();
       const senderName = userData?.display_name || "Pasanganmu";
 
@@ -103,7 +104,7 @@ const placeController = {
   // ==========================================
   // 3. UPDATE PLACE (Edit + Update Tags)
   // ==========================================
-updatePlace: async (req, res) => {
+  updatePlace: async (req, res) => {
     try {
       const { id } = req.params;
       const userId = req.user.id;
@@ -156,7 +157,7 @@ updatePlace: async (req, res) => {
         }
       }
 
-      // 5. [FIX] RE-FETCH DATA (Ambil ulang agar response lengkap dengan tags)
+      // 5. Re-fetch Data Lengkap
       const { data: finalData, error: fetchError } = await supabase
         .from('places')
         .select(`
@@ -172,10 +173,10 @@ updatePlace: async (req, res) => {
 
       if (fetchError) throw fetchError;
 
-      // Formatting JSON Tags (Flatten array)
+      // Formatting JSON Tags
       if (finalData.place_tags) {
         finalData.tags = finalData.place_tags.map(pt => pt.m_tags);
-        delete finalData.place_tags; // Hapus field perantara biar rapi
+        delete finalData.place_tags;
       }
 
       res.json({ message: "Data tempat berhasil diperbarui!", data: finalData });
@@ -223,11 +224,23 @@ updatePlace: async (req, res) => {
   },
 
   // ==========================================
-  // 5. GET DETAIL (Single + Tags)
+  // 5. GET DETAIL (Secure + Visits Included)
   // ==========================================
   getDetail: async (req, res) => {
     try {
       const { id } = req.params;
+      const userId = req.user.id;
+
+      // 1. Cek Couple ID User (Security Check)
+      const { data: member } = await supabase
+        .from('couple_members')
+        .select('couple_id')
+        .eq('user_id', userId)
+        .single();
+
+      if (!member) return res.status(403).json({ message: "Akses ditolak. Anda tidak memiliki pasangan." });
+
+      // 2. Query Detail (Wajib filter by couple_id & id)
       const { data, error } = await supabase
         .from('places')
         .select(`
@@ -237,17 +250,29 @@ updatePlace: async (req, res) => {
             created_by_user:auth_users!created_by(display_name),
             place_tags (
               m_tags (id, name, color)
+            ),
+            visits (
+              id, rating, review_text, repeat_order, visit_date, photo_urls,
+              user:auth_users (display_name, avatar_url)
             )
         `)
         .eq('id', id)
+        .eq('couple_id', member.couple_id) // <--- PENGECEKAN KEAMANAN (Hanya milik couple ini)
         .single();
 
-      if (error) return res.status(404).json({ message: "Data tidak ditemukan" });
+      if (error || !data) {
+        return res.status(404).json({ message: "Data tidak ditemukan atau Anda tidak memiliki akses." });
+      }
       
-      // Formatting
+      // Formatting Tags
       if (data.place_tags) {
         data.tags = data.place_tags.map(pt => pt.m_tags);
         delete data.place_tags;
+      }
+
+      // Formatting Visits (Sort Terbaru)
+      if (data.visits) {
+        data.visits.sort((a, b) => new Date(b.visit_date) - new Date(a.visit_date));
       }
 
       res.json({ data });
