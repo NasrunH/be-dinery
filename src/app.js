@@ -57,3 +57,5 @@ if (require.main === module) {
     console.log(`========================================\n`);
   });
 }
+
+module.exports = app;
