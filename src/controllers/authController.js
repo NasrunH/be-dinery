@@ -49,7 +49,8 @@ const authController = {
 
       res.json({
         message: "Login Berhasil!",
-        token: data.session.access_token, // JWT Token ini yang dipakai untuk request selanjutnya
+        token: data.session.access_token, 
+        refresh_token: data.session.refresh_token, // <--- Tambahkan ini
         user: {
           id: data.user.id,
           email: data.user.email
@@ -112,6 +113,24 @@ const authController = {
 
     } catch (err) {
       res.status(500).json({ error: err.message });
+    }
+  },
+  
+  // 4. REFRESH TOKEN
+  refresh: async (req, res) => {
+    try {
+      const { refresh_token } = req.body;
+      if (!refresh_token) throw new Error("Refresh token wajib ada");
+
+      const { data, error } = await supabase.auth.refreshSession({ refresh_token });
+      if (error) throw error;
+
+      res.json({
+        token: data.session.access_token,
+        refresh_token: data.session.refresh_token
+      });
+    } catch (err) {
+      res.status(401).json({ message: "Sesi berakhir, silakan login ulang", error: err.message });
     }
   }
 };

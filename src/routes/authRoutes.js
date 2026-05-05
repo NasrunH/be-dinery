@@ -6,6 +6,7 @@ const requireAuth = require('../middlewares/auth');
 // Public
 router.post('/register', authController.register);
 router.post('/login', authController.login);
+router.post('/refresh', authController.refresh);
 
 // Protected (Butuh Token)
 router.get('/me', requireAuth, authController.getMe);
