@@ -48,16 +48,12 @@ app.use((req, res) => {
 
 if (require.main === module) {
   app.listen(PORT, () => {
-    console.log(`\n🚀 SERVER RUNNING ON PORT ${PORT}`);
-    console.log(`👉 Docs: http://localhost:${PORT}/docs`);
+    console.log(`\n========================================`);
+    console.log(`🚀 SERVER RUNNING ON PORT ${PORT}`);
+    console.log(`👉 Docs    : http://localhost:${PORT}/docs`);
+    console.log(`👉 Auth    : http://localhost:${PORT}/api/auth`);
+    console.log(`👉 Places  : http://localhost:${PORT}/api/places`);
+    console.log(`👉 Visits  : http://localhost:${PORT}/api/visits`);
+    console.log(`========================================\n`);
   });
 }
-
-app.listen(PORT, () => {
-  console.log(`\n========================================`);
-  console.log(`🚀 SERVER RUNNING ON PORT ${PORT}`);
-  console.log(`👉 Auth    : http://localhost:${PORT}/api/auth`);
-  console.log(`👉 Places  : http://localhost:${PORT}/api/places`);
-  console.log(`👉 Visits  : http://localhost:${PORT}/api/visits`);
-  console.log(`========================================\n`);
-});

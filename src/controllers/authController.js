@@ -99,7 +99,7 @@ const authController = {
       
       const { data, error } = await supabase
         .from('auth_users')
-        .select('*') // Ini akan otomatis mengambil display_name, dll
+        .select('id, email, display_name, avatar_url, birth_date, phone, created_at')
         .eq('id', userId)
         .single();
       
