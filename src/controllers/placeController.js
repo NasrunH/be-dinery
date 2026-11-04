@@ -43,11 +43,17 @@ const placeController = {
 
       if (!member) return res.status(400).json({ message: "Couple tidak ditemukan." });
 
-      // 2. Auto-Detect Koordinat
+      // 2. Auto-Detect Koordinat & Alamat Otomatis dari Google Maps
       let locationPoint = null;
+      let finalAddressText = address_text || null;
       if (maps_link) {
         const coords = await geoService.extractCoordinates(maps_link);
-        if (coords) locationPoint = `POINT(${coords.long} ${coords.lat})`;
+        if (coords) {
+          locationPoint = `POINT(${coords.long} ${coords.lat})`;
+          if (!finalAddressText && geoService.reverseGeocode) {
+            finalAddressText = await geoService.reverseGeocode(coords.lat, coords.long);
+          }
+        }
       }
 
       // 3. Insert Tempat
@@ -59,7 +65,7 @@ const placeController = {
           name: name || meta_title || 'Tanpa Nama',
           target_menu,
           original_link, platform, meta_title, meta_image,
-          maps_link, address_text, location: locationPoint,
+          maps_link, address_text: finalAddressText, location: locationPoint,
           category_id, price_range_id
         })
         .select()
@@ -123,18 +129,25 @@ const placeController = {
 
       if (!member) return res.status(403).json({ message: "Akses ditolak." });
 
-      // 2. Update Koordinat jika maps berubah
+      // 2. Update Koordinat & Alamat jika maps berubah
       let locationPoint = undefined;
+      let finalAddressText = address_text || undefined;
       if (maps_link) {
         const coords = await geoService.extractCoordinates(maps_link);
-        if (coords) locationPoint = `POINT(${coords.long} ${coords.lat})`;
+        if (coords) {
+          locationPoint = `POINT(${coords.long} ${coords.lat})`;
+          if (!finalAddressText && geoService.reverseGeocode) {
+            finalAddressText = await geoService.reverseGeocode(coords.lat, coords.long);
+          }
+        }
       }
 
       // 3. Update Data Utama
       const { error: updateError } = await supabase
         .from('places')
         .update({
-          name, target_menu, category_id, price_range_id, maps_link, address_text,
+          name, target_menu, category_id, price_range_id, maps_link,
+          ...(finalAddressText && { address_text: finalAddressText }),
           ...(locationPoint && { location: locationPoint })
         })
         .eq('id', id)
@@ -276,6 +289,36 @@ const placeController = {
       // Formatting Visits (Sort Terbaru)
       if (data.visits) {
         data.visits.sort((a, b) => new Date(b.visit_date) - new Date(a.visit_date));
+      }
+
+      // Auto-resolve address_text jika masih kosong tapi ada koordinat atau maps_link
+      if (!data.address_text && (data.location || data.maps_link) && geoService.reverseGeocode) {
+        try {
+          let lat = null, long = null;
+          if (data.location) {
+            const match = String(data.location).match(/POINT\s*\(\s*([-\d.]+)\s+([-\d.]+)\s*\)/i);
+            if (match) {
+              long = parseFloat(match[1]);
+              lat = parseFloat(match[2]);
+            }
+          }
+          if (!lat && data.maps_link) {
+            const coords = await geoService.extractCoordinates(data.maps_link);
+            if (coords) {
+              lat = coords.lat;
+              long = coords.long;
+            }
+          }
+          if (lat && long) {
+            const autoAddress = await geoService.reverseGeocode(lat, long);
+            if (autoAddress) {
+              data.address_text = autoAddress;
+              supabase.from('places').update({ address_text: autoAddress }).eq('id', id).then(() => {});
+            }
+          }
+        } catch (err) {
+          console.warn('Auto resolve address error:', err.message);
+        }
       }
 
       res.json({ data });

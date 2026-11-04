@@ -179,6 +179,31 @@ const geoService = {
       console.error("[GeoService] Critical Error:", error.message);
       return null;
     }
+  },
+
+  reverseGeocode: async (lat, long) => {
+    try {
+      if (lat === null || lat === undefined || long === null || long === undefined) return null;
+      console.log(`[GeoService] 📍 Reverse geocoding koordinat: ${lat}, ${long}`);
+      const response = await axios.get(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${long}&addressdetails=1`,
+        {
+          headers: {
+            'User-Agent': 'DineryApp/1.0 (contact@dinery.web.id)',
+            'Accept-Language': 'id-ID,id;q=0.9,en;q=0.8'
+          },
+          timeout: 5000
+        }
+      );
+      if (response.data && response.data.display_name) {
+        console.log(`[GeoService] ✅ Alamat berhasil didapatkan: ${response.data.display_name}`);
+        return response.data.display_name;
+      }
+      return null;
+    } catch (err) {
+      console.warn(`[GeoService] ⚠️ Gagal reverse geocode: ${err.message}`);
+      return null;
+    }
   }
 };
 
