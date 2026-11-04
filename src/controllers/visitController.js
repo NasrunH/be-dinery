@@ -68,7 +68,7 @@ const visitController = {
           *,
           m_categories(name, icon),
           visits!inner (
-            id, rating, review_text, visit_date, photo_urls
+            id, rating, review_text, repeat_order, visit_date, photo_urls
           )
         `)
         .eq('couple_id', member.couple_id)
