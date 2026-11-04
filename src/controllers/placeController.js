@@ -203,6 +203,9 @@ const placeController = {
           m_price_ranges(label),
           place_tags (
             m_tags (id, name, color)
+          ),
+          visits (
+            id, rating, visit_date
           )
         `)
         .eq('couple_id', member.couple_id)
