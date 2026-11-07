@@ -47,11 +47,13 @@ const placeController = {
       let locationPoint = null;
       let finalAddressText = address_text || null;
       if (maps_link) {
-        const coords = await geoService.extractCoordinates(maps_link);
-        if (coords) {
-          locationPoint = `POINT(${coords.long} ${coords.lat})`;
-          if (!finalAddressText && geoService.reverseGeocode) {
-            finalAddressText = await geoService.reverseGeocode(coords.lat, coords.long);
+        const resolved = await geoService.resolveLocationAndAddress(maps_link);
+        if (resolved) {
+          if (resolved.lat && resolved.long) {
+            locationPoint = `POINT(${resolved.long} ${resolved.lat})`;
+          }
+          if (!finalAddressText && resolved.address_text) {
+            finalAddressText = resolved.address_text;
           }
         }
       }
@@ -133,11 +135,13 @@ const placeController = {
       let locationPoint = undefined;
       let finalAddressText = address_text || undefined;
       if (maps_link) {
-        const coords = await geoService.extractCoordinates(maps_link);
-        if (coords) {
-          locationPoint = `POINT(${coords.long} ${coords.lat})`;
-          if (!finalAddressText && geoService.reverseGeocode) {
-            finalAddressText = await geoService.reverseGeocode(coords.lat, coords.long);
+        const resolved = await geoService.resolveLocationAndAddress(maps_link);
+        if (resolved) {
+          if (resolved.lat && resolved.long) {
+            locationPoint = `POINT(${resolved.long} ${resolved.lat})`;
+          }
+          if (!finalAddressText && resolved.address_text) {
+            finalAddressText = resolved.address_text;
           }
         }
       }
@@ -291,33 +295,31 @@ const placeController = {
         data.visits.sort((a, b) => new Date(b.visit_date) - new Date(a.visit_date));
       }
 
-      // Auto-resolve address_text jika masih kosong tapi ada koordinat atau maps_link
-      if (!data.address_text && (data.location || data.maps_link) && geoService.reverseGeocode) {
+      // Auto-resolve address_text jika masih kosong atau tidak akurat (Amerika/Virginia)
+      const isBadAddress = !data.address_text || 
+        data.address_text.trim() === '' ||
+        data.address_text.includes('Amerika') || 
+        data.address_text.includes('Virginia') || 
+        data.address_text.includes('United States');
+
+      if (isBadAddress && data.maps_link) {
         try {
-          let lat = null, long = null;
-          if (data.location) {
-            const match = String(data.location).match(/POINT\s*\(\s*([-\d.]+)\s+([-\d.]+)\s*\)/i);
-            if (match) {
-              long = parseFloat(match[1]);
-              lat = parseFloat(match[2]);
+          const resolved = await geoService.resolveLocationAndAddress(data.maps_link);
+          if (resolved) {
+            const updatePayload = {};
+            if (resolved.address_text) {
+              data.address_text = resolved.address_text;
+              updatePayload.address_text = resolved.address_text;
             }
-          }
-          if (!lat && data.maps_link) {
-            const coords = await geoService.extractCoordinates(data.maps_link);
-            if (coords) {
-              lat = coords.lat;
-              long = coords.long;
+            if (resolved.lat && resolved.long) {
+              updatePayload.location = `POINT(${resolved.long} ${resolved.lat})`;
             }
-          }
-          if (lat && long) {
-            const autoAddress = await geoService.reverseGeocode(lat, long);
-            if (autoAddress) {
-              data.address_text = autoAddress;
-              supabase.from('places').update({ address_text: autoAddress }).eq('id', id).then(() => {});
+            if (Object.keys(updatePayload).length > 0) {
+              supabase.from('places').update(updatePayload).eq('id', id).then(() => {});
             }
           }
         } catch (err) {
-          console.warn('Auto resolve address error:', err.message);
+          console.warn('Auto resolve address in getDetail error:', err.message);
         }
       }
 
@@ -429,6 +431,61 @@ const placeController = {
       res.status(500).json({ error: err.message });
     }
   }
+  // ==========================================
+  // 7. SYNC MISSING / INVALID ADDRESSES (Batch Service)
+  // ==========================================
+  syncAddresses: async (req, res) => {
+    try {
+      const userId = req.user.id;
+      const { data: member } = await supabase.from('couple_members').select('couple_id').eq('user_id', userId).single();
+      const coupleId = member ? member.couple_id : null;
+
+      let query = supabase.from('places').select('id, name, maps_link, address_text, location');
+      if (coupleId) {
+        query = query.eq('couple_id', coupleId);
+      }
+
+      const { data: places, error } = await query;
+      if (error) throw error;
+
+      const needsSync = places.filter(p => 
+        !p.address_text || 
+        p.address_text.trim() === '' || 
+        p.address_text.includes('Amerika') || 
+        p.address_text.includes('Virginia') || 
+        p.address_text.includes('United States')
+      );
+
+      console.log(`[syncAddresses] Total places needing sync: ${needsSync.length}`);
+
+      const results = [];
+      for (const p of needsSync) {
+        if (!p.maps_link) continue;
+        const resolved = await geoService.resolveLocationAndAddress(p.maps_link);
+        if (resolved && (resolved.address_text || (resolved.lat && resolved.long))) {
+          const updatePayload = {};
+          if (resolved.address_text) {
+            updatePayload.address_text = resolved.address_text;
+          }
+          if (resolved.lat && resolved.long) {
+            updatePayload.location = `POINT(${resolved.long} ${resolved.lat})`;
+          }
+          await supabase.from('places').update(updatePayload).eq('id', p.id);
+          results.push({ id: p.id, name: p.name, ...updatePayload });
+        }
+      }
+
+      res.json({
+        message: `Sinkronisasi alamat selesai. ${results.length} tempat berhasil diperbarui.`,
+        synced_count: results.length,
+        total_checked: needsSync.length,
+        data: results
+      });
+    } catch (err) {
+      console.error('[placeController.syncAddresses] Error:', err);
+      res.status(500).json({ error: err.message });
+    }
+  },
 };
 
 module.exports = placeController;
