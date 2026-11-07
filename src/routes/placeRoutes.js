@@ -7,6 +7,7 @@ router.use(requireAuth);
 
 router.post('/preview', placeController.preview);
 router.post('/resolve-maps', placeController.resolveMaps);
+router.post('/reverse-geocode', placeController.reverseGeocode);
 router.post('/', placeController.addPlace);
 router.get('/', placeController.getWishlist);
 router.get('/nearby', placeController.getNearby);

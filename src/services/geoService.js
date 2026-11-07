@@ -1,5 +1,9 @@
 const axios = require('axios');
 
+// In-memory cache untuk hasil reverse geocoding agar tidak berulang kali memanggil Nominatim
+const addressCache = new Map();
+const MAX_CACHE_SIZE = 500;
+
 const isValidIndo = (lat, long) => {
   return (
     typeof lat === 'number' &&
@@ -29,9 +33,77 @@ const isForeignAddress = (address) => {
   );
 };
 
+/**
+ * Parsing lokasi dari berbagai format PostGIS / GeoJSON / WKT / EWKB Hex
+ */
+const parseLocation = (location) => {
+  if (!location) return null;
+
+  // 1. Format Object { lat, lng } atau { lat, long } atau GeoJSON
+  if (typeof location === 'object') {
+    if (typeof location.lat === 'number' && typeof location.long === 'number') {
+      if (isValidIndo(location.lat, location.long)) {
+        return { lat: location.lat, long: location.long };
+      }
+    }
+    if (typeof location.lat === 'number' && typeof location.lng === 'number') {
+      if (isValidIndo(location.lat, location.lng)) {
+        return { lat: location.lat, long: location.lng };
+      }
+    }
+    if (Array.isArray(location.coordinates) && location.coordinates.length >= 2) {
+      const long = Number(location.coordinates[0]);
+      const lat = Number(location.coordinates[1]);
+      if (isValidIndo(lat, long)) {
+        return { lat, long };
+      }
+    }
+  }
+
+  if (typeof location !== 'string') return null;
+
+  // 2. Format WKT String "POINT(long lat)"
+  const pointMatch = location.match(/POINT\s*\(\s*([-\d.]+)\s+([-\d.]+)\s*\)/i);
+  if (pointMatch) {
+    const long = parseFloat(pointMatch[1]);
+    const lat = parseFloat(pointMatch[2]);
+    if (isValidIndo(lat, long)) {
+      return { lat, long };
+    }
+  }
+
+  // 3. Format PostGIS EWKB Hex String
+  try {
+    const cleanHex = location.replace(/^\\x/, '');
+    if (cleanHex.length >= 32) {
+      const buffer = Buffer.from(cleanHex, 'hex');
+      if (buffer.length >= 21) {
+        const isLittleEndian = buffer.readUInt8(0) === 1;
+        const type = isLittleEndian ? buffer.readUInt32LE(1) : buffer.readUInt32BE(1);
+        let offset = 5;
+        if ((type & 0x20000000) !== 0) {
+          offset += 4; // Lewati 4-byte SRID
+        }
+        if (buffer.length >= offset + 16) {
+          const long = isLittleEndian ? buffer.readDoubleLE(offset) : buffer.readDoubleBE(offset);
+          const lat = isLittleEndian ? buffer.readDoubleLE(offset + 8) : buffer.readDoubleBE(offset + 8);
+          if (isValidIndo(lat, long)) {
+            return { lat, long };
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[GeoService] Parse EWKB Hex error:', err.message);
+  }
+
+  return null;
+};
+
 const geoService = {
   isValidIndo,
   isForeignAddress,
+  parseLocation,
 
   extractAddressFromUrl: (url) => {
     if (!url) return null;
@@ -61,12 +133,19 @@ const geoService = {
         return null;
       }
 
-      console.log(`[GeoService] 📍 Reverse geocoding koordinat: ${lat}, ${long}`);
+      // Cek in-memory cache (~11 meter precision pada 4 desimal)
+      const cacheKey = `${lat.toFixed(4)},${long.toFixed(4)}`;
+      if (addressCache.has(cacheKey)) {
+        console.log(`[GeoService] ⚡ Cache HIT untuk reverse geocode: ${cacheKey}`);
+        return addressCache.get(cacheKey);
+      }
+
+      console.log(`[GeoService] 📍 Reverse geocoding koordinat via OpenStreetMap Nominatim: ${lat}, ${long}`);
       const response = await axios.get(
         `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${long}&addressdetails=1`,
         {
           headers: {
-            'User-Agent': 'DineryApp/1.0 (contact@dinery.web.id)',
+            'User-Agent': 'DineryBackend/1.0 (contact@dinery.web.id)',
             'Accept-Language': 'id-ID,id;q=0.9,en;q=0.8'
           },
           timeout: 5000
@@ -79,6 +158,14 @@ const geoService = {
           console.warn('[GeoService] ⚠️ Hasil reverse geocode tertolak karena berlokasi di luar negeri:', address);
           return null;
         }
+
+        // Simpan ke cache
+        if (addressCache.size >= MAX_CACHE_SIZE) {
+          const firstKey = addressCache.keys().next().value;
+          addressCache.delete(firstKey);
+        }
+        addressCache.set(cacheKey, address);
+
         console.log(`[GeoService] ✅ Alamat berhasil didapatkan: ${address}`);
         return address;
       }
@@ -199,6 +286,37 @@ const geoService = {
       console.warn(`[GeoService] Resolve error: ${err.message}`);
       return null;
     }
+  },
+
+  resolveAddressFromCoordsOrLocation: async (location, mapsLink) => {
+    // 1. Ekstrak langsung dari URL maps jika ada
+    if (mapsLink) {
+      const urlAddress = geoService.extractAddressFromUrl(mapsLink);
+      if (urlAddress && !isForeignAddress(urlAddress)) {
+        return urlAddress;
+      }
+    }
+
+    // 2. Parse koordinat dari PostGIS location
+    let coords = parseLocation(location);
+
+    // 3. Jika belum dapat, resolve dari mapsLink
+    if ((!coords || !isValidIndo(coords.lat, coords.long)) && mapsLink) {
+      const resolved = await geoService.resolveLocationAndAddress(mapsLink);
+      if (resolved?.address_text && !isForeignAddress(resolved.address_text)) {
+        return resolved.address_text;
+      }
+      if (resolved?.lat && resolved?.long && isValidIndo(resolved.lat, resolved.long)) {
+        coords = { lat: resolved.lat, long: resolved.long };
+      }
+    }
+
+    // 4. Reverse geocode dari koordinat
+    if (coords && isValidIndo(coords.lat, coords.long)) {
+      return await geoService.reverseGeocode(coords.lat, coords.long);
+    }
+
+    return null;
   },
 
   extractCoordinates: async (mapsLink) => {

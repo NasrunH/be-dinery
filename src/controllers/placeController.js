@@ -49,33 +49,92 @@ const placeController = {
   // ==========================================
   resolveMaps: async (req, res) => {
     try {
-      const { maps_link } = req.body;
-      if (!maps_link) return res.status(400).json({ message: "maps_link wajib diisi" });
+      const { maps_link, location, lat, long } = req.body;
+      if (!maps_link && !location && (lat === undefined || long === undefined)) {
+        return res.status(400).json({ message: "maps_link, location, atau lat/long wajib diisi" });
+      }
 
-      const resolved = await geoService.resolveLocationAndAddress(maps_link);
+      let resolved = null;
       let cleanSuggestedName = "";
 
-      if (resolved?.finalUrl) {
-        try {
-          const match = resolved.finalUrl.match(/\/maps\/place\/([^/?#]+)/);
-          if (match && match[1]) {
-            let decoded = decodeURIComponent(match[1].replace(/\+/g, ' '));
-            decoded = decoded.replace(/@.*$/, '').trim();
-            const parts = decoded.split(/[,·•\uFFFD]/);
-            if (parts.length > 0 && parts[0].trim()) {
-              cleanSuggestedName = parts[0].trim();
+      if (maps_link) {
+        resolved = await geoService.resolveLocationAndAddress(maps_link);
+        if (resolved?.finalUrl) {
+          try {
+            const match = resolved.finalUrl.match(/\/maps\/place\/([^/?#]+)/);
+            if (match && match[1]) {
+              let decoded = decodeURIComponent(match[1].replace(/\+/g, ' '));
+              decoded = decoded.replace(/@.*$/, '').trim();
+              const parts = decoded.split(/[,·•\uFFFD]/);
+              if (parts.length > 0 && parts[0].trim()) {
+                cleanSuggestedName = parts[0].trim();
+              }
             }
+          } catch {}
+        }
+      }
+
+      let address = resolved?.address_text || null;
+      let targetLat = resolved?.lat || null;
+      let targetLong = resolved?.long || null;
+
+      // Jika belum dapat alamat tapi ada location atau lat/long
+      if (!address && (location || (lat !== undefined && long !== undefined))) {
+        address = await geoService.resolveAddressFromCoordsOrLocation(location, maps_link);
+        if (!targetLat || !targetLong) {
+          const parsed = geoService.parseLocation(location) || (lat && long ? { lat: parseFloat(lat), long: parseFloat(long) } : null);
+          if (parsed && geoService.isValidIndo(parsed.lat, parsed.long)) {
+            targetLat = parsed.lat;
+            targetLong = parsed.long;
           }
-        } catch {}
+        }
       }
 
       res.json({
-        message: "Maps berhasil dideteksi",
+        message: address ? "Maps & Alamat berhasil dideteksi" : "Maps berhasil dideteksi",
         data: {
-          address_text: resolved?.address_text || null,
-          lat: resolved?.lat || null,
-          long: resolved?.long || null,
+          address_text: address && !geoService.isForeignAddress(address) ? address : null,
+          lat: targetLat,
+          long: targetLong,
           suggested_name: cleanSuggestedName || null
+        }
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  },
+
+  // ==========================================
+  // 1C. REVERSE GEOCODE (Backend OpenStreetMap)
+  // ==========================================
+  reverseGeocode: async (req, res) => {
+    try {
+      const { lat, long, location, maps_link } = req.body;
+      let targetLat = typeof lat === 'number' ? lat : (lat ? parseFloat(lat) : null);
+      let targetLong = typeof long === 'number' ? long : (long ? parseFloat(long) : null);
+
+      let address = null;
+
+      // 1. Jika koordinat lat & long langsung dikirim
+      if (targetLat !== null && targetLong !== null && geoService.isValidIndo(targetLat, targetLong)) {
+        address = await geoService.reverseGeocode(targetLat, targetLong);
+      } 
+      // 2. Jika location (PostGIS Point) atau maps_link dikirim
+      else if (location || maps_link) {
+        address = await geoService.resolveAddressFromCoordsOrLocation(location, maps_link);
+        const parsedCoords = geoService.parseLocation(location);
+        if (parsedCoords) {
+          targetLat = parsedCoords.lat;
+          targetLong = parsedCoords.long;
+        }
+      }
+
+      res.json({
+        message: address ? "Alamat berhasil didapatkan via Backend Geocoding" : "Alamat tidak ditemukan",
+        data: {
+          address_text: address && !geoService.isForeignAddress(address) ? address : null,
+          lat: targetLat,
+          long: targetLong
         }
       });
     } catch (err) {
@@ -367,25 +426,43 @@ const placeController = {
       if (isBadAddress) {
         // Hapus alamat asing/cacat agar tidak pernah dikirim ke user
         data.address_text = null;
-        if (data.maps_link) {
-          try {
+        try {
+          let resolvedAddress = null;
+          let resolvedLat = null;
+          let resolvedLong = null;
+
+          if (data.maps_link) {
             const resolved = await geoService.resolveLocationAndAddress(data.maps_link);
             if (resolved) {
-              const updatePayload = {};
               if (resolved.address_text && !geoService.isForeignAddress(resolved.address_text)) {
-                data.address_text = resolved.address_text;
-                updatePayload.address_text = resolved.address_text;
+                resolvedAddress = resolved.address_text;
               }
               if (resolved.lat && resolved.long && geoService.isValidIndo(resolved.lat, resolved.long)) {
-                updatePayload.location = `POINT(${resolved.long} ${resolved.lat})`;
-              }
-              if (Object.keys(updatePayload).length > 0) {
-                await supabase.from('places').update(updatePayload).eq('id', id);
+                resolvedLat = resolved.lat;
+                resolvedLong = resolved.long;
               }
             }
-          } catch (err) {
-            console.warn('Auto resolve address in getDetail error:', err.message);
           }
+
+          // Jika belum dapat alamat dari maps_link tapi ada location Point PostGIS
+          if (!resolvedAddress && data.location) {
+            resolvedAddress = await geoService.resolveAddressFromCoordsOrLocation(data.location, data.maps_link);
+          }
+
+          const updatePayload = {};
+          if (resolvedAddress && !geoService.isForeignAddress(resolvedAddress)) {
+            data.address_text = resolvedAddress;
+            updatePayload.address_text = resolvedAddress;
+          }
+          if (resolvedLat && resolvedLong) {
+            updatePayload.location = `POINT(${resolvedLong} ${resolvedLat})`;
+          }
+
+          if (Object.keys(updatePayload).length > 0) {
+            await supabase.from('places').update(updatePayload).eq('id', id);
+          }
+        } catch (err) {
+          console.warn('Auto resolve address in getDetail error:', err.message);
         }
       }
 
@@ -524,16 +601,19 @@ const placeController = {
 
       const results = [];
       for (const p of needsSync) {
-        if (!p.maps_link) {
-          if (geoService.isForeignAddress(p.address_text)) {
-            await supabase.from('places').update({ address_text: null }).eq('id', p.id);
-          }
-          continue;
+        let resolved = null;
+        if (p.maps_link) {
+          resolved = await geoService.resolveLocationAndAddress(p.maps_link);
         }
-        const resolved = await geoService.resolveLocationAndAddress(p.maps_link);
+
+        let resolvedAddress = resolved?.address_text;
+        if (!resolvedAddress && p.location) {
+          resolvedAddress = await geoService.resolveAddressFromCoordsOrLocation(p.location, p.maps_link);
+        }
+
         const updatePayload = {};
-        if (resolved?.address_text && !geoService.isForeignAddress(resolved.address_text)) {
-          updatePayload.address_text = resolved.address_text;
+        if (resolvedAddress && !geoService.isForeignAddress(resolvedAddress)) {
+          updatePayload.address_text = resolvedAddress;
         } else if (geoService.isForeignAddress(p.address_text)) {
           updatePayload.address_text = null;
         }
