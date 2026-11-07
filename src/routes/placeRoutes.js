@@ -6,6 +6,7 @@ const requireAuth = require('../middlewares/auth');
 router.use(requireAuth);
 
 router.post('/preview', placeController.preview);
+router.post('/resolve-maps', placeController.resolveMaps);
 router.post('/', placeController.addPlace);
 router.get('/', placeController.getWishlist);
 router.get('/nearby', placeController.getNearby);

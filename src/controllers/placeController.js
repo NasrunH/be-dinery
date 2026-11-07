@@ -14,7 +14,70 @@ const placeController = {
       if (!url) return res.status(400).json({ message: "URL wajib diisi" });
 
       const data = await scraperService.getMetadata(url);
+
+      // Jika URL Google Maps, auto-resolve alamat dan koordinat langsung
+      const isMaps = url.includes('google.com/maps') || url.includes('goo.gl') || url.includes('share.google');
+      if (isMaps || data.platform === 'Google Maps') {
+        const resolved = await geoService.resolveLocationAndAddress(url);
+        if (resolved) {
+          data.address_text = resolved.address_text || null;
+          data.lat = resolved.lat || null;
+          data.long = resolved.long || null;
+
+          if (resolved.finalUrl) {
+            const match = resolved.finalUrl.match(/\/maps\/place\/([^/?#]+)/);
+            if (match && match[1]) {
+              let decoded = decodeURIComponent(match[1].replace(/\+/g, ' '));
+              decoded = decoded.replace(/@.*$/, '').trim();
+              const parts = decoded.split(/[,·•\uFFFD]/);
+              if (parts.length > 0 && parts[0].trim()) {
+                data.suggested_name = parts[0].trim();
+              }
+            }
+          }
+        }
+      }
+
       res.json({ message: "Preview didapatkan", data });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  },
+
+  // ==========================================
+  // 1B. RESOLVE MAPS (Auto-detect Address & Location)
+  // ==========================================
+  resolveMaps: async (req, res) => {
+    try {
+      const { maps_link } = req.body;
+      if (!maps_link) return res.status(400).json({ message: "maps_link wajib diisi" });
+
+      const resolved = await geoService.resolveLocationAndAddress(maps_link);
+      let cleanSuggestedName = "";
+
+      if (resolved?.finalUrl) {
+        try {
+          const match = resolved.finalUrl.match(/\/maps\/place\/([^/?#]+)/);
+          if (match && match[1]) {
+            let decoded = decodeURIComponent(match[1].replace(/\+/g, ' '));
+            decoded = decoded.replace(/@.*$/, '').trim();
+            const parts = decoded.split(/[,·•\uFFFD]/);
+            if (parts.length > 0 && parts[0].trim()) {
+              cleanSuggestedName = parts[0].trim();
+            }
+          }
+        } catch {}
+      }
+
+      res.json({
+        message: "Maps berhasil dideteksi",
+        data: {
+          address_text: resolved?.address_text || null,
+          lat: resolved?.lat || null,
+          long: resolved?.long || null,
+          suggested_name: cleanSuggestedName || null
+        }
+      });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
