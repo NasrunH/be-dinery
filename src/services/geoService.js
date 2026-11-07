@@ -13,8 +13,25 @@ const isValidIndo = (lat, long) => {
   );
 };
 
+const isForeignAddress = (address) => {
+  if (!address || typeof address !== 'string') return true;
+  const lower = address.toLowerCase();
+  return (
+    lower.includes('virginia') ||
+    lower.includes('amerika') ||
+    lower.includes('united states') ||
+    lower.includes('archbold') ||
+    lower.includes('loudoun') ||
+    lower.includes('ashburn') ||
+    lower.includes('california') ||
+    lower.includes('washington') ||
+    lower.includes('usa')
+  );
+};
+
 const geoService = {
   isValidIndo,
+  isForeignAddress,
 
   extractAddressFromUrl: (url) => {
     if (!url) return null;
@@ -26,7 +43,7 @@ const geoService = {
         const parts = decoded.split(',');
         if (parts.length > 1) {
           const addressPart = parts.slice(1).join(',').trim();
-          if (addressPart.length > 5 && !addressPart.toLowerCase().includes('united states') && !addressPart.toLowerCase().includes('amerika serikat')) {
+          if (addressPart.length > 5 && !isForeignAddress(addressPart)) {
             return addressPart;
           }
         }
@@ -58,7 +75,7 @@ const geoService = {
 
       const address = response.data?.display_name;
       if (address) {
-        if (address.includes('Amerika') || address.includes('United States') || address.includes('Virginia')) {
+        if (isForeignAddress(address)) {
           console.warn('[GeoService] ⚠️ Hasil reverse geocode tertolak karena berlokasi di luar negeri:', address);
           return null;
         }
@@ -173,9 +190,9 @@ const geoService = {
       }
 
       return {
-        address_text: address || null,
-        lat: lat || null,
-        long: long || null,
+        address_text: (address && !isForeignAddress(address)) ? address : null,
+        lat: (lat && isValidIndo(lat, long)) ? lat : null,
+        long: (long && isValidIndo(lat, long)) ? long : null,
         finalUrl
       };
     } catch (err) {

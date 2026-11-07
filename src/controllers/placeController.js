@@ -108,14 +108,14 @@ const placeController = {
 
       // 2. Auto-Detect Koordinat & Alamat Otomatis dari Google Maps
       let locationPoint = null;
-      let finalAddressText = address_text || null;
+      let finalAddressText = (address_text && !geoService.isForeignAddress(address_text)) ? address_text : null;
       if (maps_link) {
         const resolved = await geoService.resolveLocationAndAddress(maps_link);
         if (resolved) {
-          if (resolved.lat && resolved.long) {
+          if (resolved.lat && resolved.long && geoService.isValidIndo(resolved.lat, resolved.long)) {
             locationPoint = `POINT(${resolved.long} ${resolved.lat})`;
           }
-          if (!finalAddressText && resolved.address_text) {
+          if (!finalAddressText && resolved.address_text && !geoService.isForeignAddress(resolved.address_text)) {
             finalAddressText = resolved.address_text;
           }
         }
@@ -196,14 +196,14 @@ const placeController = {
 
       // 2. Update Koordinat & Alamat jika maps berubah
       let locationPoint = undefined;
-      let finalAddressText = address_text || undefined;
+      let finalAddressText = (address_text && !geoService.isForeignAddress(address_text)) ? address_text : undefined;
       if (maps_link) {
         const resolved = await geoService.resolveLocationAndAddress(maps_link);
         if (resolved) {
-          if (resolved.lat && resolved.long) {
+          if (resolved.lat && resolved.long && geoService.isValidIndo(resolved.lat, resolved.long)) {
             locationPoint = `POINT(${resolved.long} ${resolved.lat})`;
           }
-          if (!finalAddressText && resolved.address_text) {
+          if (!finalAddressText && resolved.address_text && !geoService.isForeignAddress(resolved.address_text)) {
             finalAddressText = resolved.address_text;
           }
         }
@@ -362,28 +362,30 @@ const placeController = {
       // Auto-resolve address_text jika masih kosong atau tidak akurat (Amerika/Virginia)
       const isBadAddress = !data.address_text || 
         data.address_text.trim() === '' ||
-        data.address_text.includes('Amerika') || 
-        data.address_text.includes('Virginia') || 
-        data.address_text.includes('United States');
+        geoService.isForeignAddress(data.address_text);
 
-      if (isBadAddress && data.maps_link) {
-        try {
-          const resolved = await geoService.resolveLocationAndAddress(data.maps_link);
-          if (resolved) {
-            const updatePayload = {};
-            if (resolved.address_text) {
-              data.address_text = resolved.address_text;
-              updatePayload.address_text = resolved.address_text;
+      if (isBadAddress) {
+        // Hapus alamat asing/cacat agar tidak pernah dikirim ke user
+        data.address_text = null;
+        if (data.maps_link) {
+          try {
+            const resolved = await geoService.resolveLocationAndAddress(data.maps_link);
+            if (resolved) {
+              const updatePayload = {};
+              if (resolved.address_text && !geoService.isForeignAddress(resolved.address_text)) {
+                data.address_text = resolved.address_text;
+                updatePayload.address_text = resolved.address_text;
+              }
+              if (resolved.lat && resolved.long && geoService.isValidIndo(resolved.lat, resolved.long)) {
+                updatePayload.location = `POINT(${resolved.long} ${resolved.lat})`;
+              }
+              if (Object.keys(updatePayload).length > 0) {
+                await supabase.from('places').update(updatePayload).eq('id', id);
+              }
             }
-            if (resolved.lat && resolved.long) {
-              updatePayload.location = `POINT(${resolved.long} ${resolved.lat})`;
-            }
-            if (Object.keys(updatePayload).length > 0) {
-              supabase.from('places').update(updatePayload).eq('id', id).then(() => {});
-            }
+          } catch (err) {
+            console.warn('Auto resolve address in getDetail error:', err.message);
           }
-        } catch (err) {
-          console.warn('Auto resolve address in getDetail error:', err.message);
         }
       }
 
@@ -515,25 +517,30 @@ const placeController = {
       const needsSync = places.filter(p => 
         !p.address_text || 
         p.address_text.trim() === '' || 
-        p.address_text.includes('Amerika') || 
-        p.address_text.includes('Virginia') || 
-        p.address_text.includes('United States')
+        geoService.isForeignAddress(p.address_text)
       );
 
       console.log(`[syncAddresses] Total places needing sync: ${needsSync.length}`);
 
       const results = [];
       for (const p of needsSync) {
-        if (!p.maps_link) continue;
+        if (!p.maps_link) {
+          if (geoService.isForeignAddress(p.address_text)) {
+            await supabase.from('places').update({ address_text: null }).eq('id', p.id);
+          }
+          continue;
+        }
         const resolved = await geoService.resolveLocationAndAddress(p.maps_link);
-        if (resolved && (resolved.address_text || (resolved.lat && resolved.long))) {
-          const updatePayload = {};
-          if (resolved.address_text) {
-            updatePayload.address_text = resolved.address_text;
-          }
-          if (resolved.lat && resolved.long) {
-            updatePayload.location = `POINT(${resolved.long} ${resolved.lat})`;
-          }
+        const updatePayload = {};
+        if (resolved?.address_text && !geoService.isForeignAddress(resolved.address_text)) {
+          updatePayload.address_text = resolved.address_text;
+        } else if (geoService.isForeignAddress(p.address_text)) {
+          updatePayload.address_text = null;
+        }
+        if (resolved?.lat && resolved?.long && geoService.isValidIndo(resolved.lat, resolved.long)) {
+          updatePayload.location = `POINT(${resolved.long} ${resolved.lat})`;
+        }
+        if (Object.keys(updatePayload).length > 0) {
           await supabase.from('places').update(updatePayload).eq('id', p.id);
           results.push({ id: p.id, name: p.name, ...updatePayload });
         }
