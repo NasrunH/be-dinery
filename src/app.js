@@ -43,6 +43,10 @@ const registerRoutes = (prefix = '') => {
 registerRoutes('/api');
 registerRoutes('');
 
+// Alias auth routes directly under /api and / for maximum client compatibility (e.g. /login, /api/login)
+app.use('/api', authRoutes);
+app.use('/', authRoutes);
+
 app.use(express.static(path.join(__dirname, '../public')));
 app.get('/docs', (req, res) => {
   res.sendFile(path.join(__dirname, '../public/api-docs.html'));
