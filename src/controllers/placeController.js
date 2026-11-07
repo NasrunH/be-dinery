@@ -181,7 +181,7 @@ const placeController = {
       const userId = req.user.id;
       const { 
         name, target_menu, category_id, price_range_id, 
-        maps_link, address_text,
+        maps_link, address_text, original_link,
         tag_ids // Array ID Tag Baru
       } = req.body;
 
@@ -214,6 +214,7 @@ const placeController = {
         .from('places')
         .update({
           name, target_menu, category_id, price_range_id, maps_link,
+          ...(original_link !== undefined && { original_link }),
           ...(finalAddressText && { address_text: finalAddressText }),
           ...(locationPoint && { location: locationPoint })
         })
