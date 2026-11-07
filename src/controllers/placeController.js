@@ -430,7 +430,7 @@ const placeController = {
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
-  }
+  },
   // ==========================================
   // 7. SYNC MISSING / INVALID ADDRESSES (Batch Service)
   // ==========================================
