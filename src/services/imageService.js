@@ -5,7 +5,7 @@ const cheerio = require('cheerio');
 const imageService = {
   /**
    * Ekstraksi URL foto nyata dari respon metadata Google Maps
-   * Menolak gambar peta statis (staticmap/tile) dan mengekstrak foto user content beresolusi tajam
+   * Menolak gambar peta statis (staticmap/tile/streetview) dan mengekstrak foto user content beresolusi tajam
    */
   extractGooglePhotoUrl: (ogImage) => {
     if (!ogImage || typeof ogImage !== 'string') return null;
@@ -55,6 +55,11 @@ const imageService = {
   compressUrlToWebpBase64: async (imageUrl, options = {}) => {
     if (!imageUrl || typeof imageUrl !== 'string') return null;
 
+    // Jangan kompres jika link adalah static map
+    if (imageUrl.includes('staticmap') || imageUrl.includes('maps/api')) {
+      return null;
+    }
+
     // Jika sudah berupa data URI WebP dan ukurannya wajar, langsung kembalikan
     if (imageUrl.startsWith('data:image/webp;base64,') && imageUrl.length < 35000) {
       return imageUrl;
@@ -96,17 +101,25 @@ const imageService = {
   fetchFreshImageForPlace: async (place) => {
     if (!place) return null;
 
-    // 1. Coba ambil dari TikTok OEmbed jika original_link adalah TikTok
+    // 1. Coba ambil dari TikTok via facebookexternalhit (Mendapatkan cover foto asli video TikTok)
     if (place.original_link && place.original_link.includes('tiktok.com')) {
       try {
-        const oembedUrl = `https://www.tiktok.com/oembed?url=${encodeURIComponent(place.original_link)}`;
-        const { data } = await axios.get(oembedUrl, { timeout: 8000 });
-        if (data?.thumbnail_url) {
-          const compressed = await imageService.compressUrlToWebpBase64(data.thumbnail_url);
+        const res = await axios.get(place.original_link, {
+          headers: {
+            'User-Agent': 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
+          },
+          timeout: 10000,
+          maxRedirects: 5
+        });
+        const $ = cheerio.load(res.data);
+        const ogImage = $('meta[property="og:image"]').attr('content');
+        if (ogImage && ogImage.startsWith('http')) {
+          const compressed = await imageService.compressUrlToWebpBase64(ogImage);
           if (compressed) return compressed;
         }
       } catch (e) {
-        console.warn(`[imageService] TikTok OEmbed gagal untuk ID ${place.id}: ${e.message}`);
+        console.warn(`[imageService] TikTok scrape gagal untuk ID ${place.id}: ${e.message}`);
       }
     }
 
@@ -118,11 +131,12 @@ const imageService = {
             'User-Agent': 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
           },
-          timeout: 8000
+          timeout: 10000,
+          maxRedirects: 5
         });
         const $ = cheerio.load(data);
         const ogImage = $('meta[property="og:image"]').attr('content') || $('meta[name="twitter:image"]').attr('content');
-        if (ogImage) {
+        if (ogImage && ogImage.startsWith('http')) {
           const compressed = await imageService.compressUrlToWebpBase64(ogImage);
           if (compressed) return compressed;
         }
