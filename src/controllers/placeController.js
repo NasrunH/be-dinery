@@ -534,19 +534,19 @@ const placeController = {
   },
 
   // ==========================================
-  // 8. GACHA (Randomizer)
+  // 8. GACHA (Randomizer dengan Filter Radius & Jarak)
   // ==========================================
   gacha: async (req, res) => {
     try {
       const userId = req.user.id;
-      const { category_id, price_range_id } = req.query;
+      const { category_id, price_range_id, lat, long, radius } = req.query;
 
       const { data: member } = await supabase.from('couple_members').select('couple_id').eq('user_id', userId).single();
       if (!member) return res.status(400).json({ message: "Couple tidak ditemukan." });
 
       let query = supabase
         .from('places')
-        .select(`*, visits(id), m_categories(name), m_price_ranges(label)`)
+        .select(`*, visits(id), m_categories(name, icon), m_price_ranges(label)`)
         .eq('couple_id', member.couple_id);
 
       if (category_id) query = query.eq('category_id', category_id);
@@ -556,10 +556,39 @@ const placeController = {
       if (error) throw error;
 
       // Filter: Hanya yang belum dikunjungi
-      const wishlist = data.filter(place => place.visits.length === 0);
+      let wishlist = data.filter(place => place.visits.length === 0);
+
+      // Filter Radius jika koordinat user & radius diberikan
+      const userLat = lat ? parseFloat(lat) : null;
+      const userLong = long ? parseFloat(long) : null;
+      const radiusKm = radius ? parseFloat(radius) : null;
+
+      if (userLat !== null && userLong !== null && !isNaN(userLat) && !isNaN(userLong)) {
+        wishlist = wishlist.map(place => {
+          const coords = geoService.parseLocation(place.location);
+          if (coords) {
+            const dist = geoService.calculateDistance(userLat, userLong, coords.lat, coords.long);
+            return {
+              ...place,
+              distance_km: dist !== null ? Math.round(dist * 10) / 10 : null,
+              distance_meters: dist !== null ? Math.round(dist * 1000) : null
+            };
+          }
+          return { ...place, distance_km: null, distance_meters: null };
+        });
+
+        // Jika radius dipilih (misal 3, 5, 10 km)
+        if (radiusKm && !isNaN(radiusKm)) {
+          wishlist = wishlist.filter(p => p.distance_km !== null && p.distance_km <= radiusKm);
+        }
+      }
 
       if (wishlist.length === 0) {
-        return res.status(404).json({ message: "Tidak ada wishlist yang cocok untuk digacha." });
+        return res.status(404).json({ 
+          message: radiusKm 
+            ? `Tidak ada tempat wishlist yang cocok dalam radius ${radiusKm} km. Coba perbesar radiusnya ya!` 
+            : "Tidak ada wishlist yang cocok untuk digacha." 
+        });
       }
 
       const randomIndex = Math.floor(Math.random() * wishlist.length);
@@ -567,7 +596,8 @@ const placeController = {
 
       res.json({
         message: "🎉 PEMENANG GACHA DITENTUKAN! 🎉",
-        winner_data: winner
+        winner_data: winner,
+        total_candidates: wishlist.length
       });
 
     } catch (err) {

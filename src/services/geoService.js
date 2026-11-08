@@ -20,17 +20,37 @@ const isValidIndo = (lat, long) => {
 const isForeignAddress = (address) => {
   if (!address || typeof address !== 'string') return true;
   const lower = address.toLowerCase();
+  // Jika secara eksplisit memuat kata indonesia, maka dipastikan bukan alamat luar negeri
+  if (lower.includes('indonesia')) return false;
   return (
     lower.includes('virginia') ||
-    lower.includes('amerika') ||
+    lower.includes('amerika serikat') ||
     lower.includes('united states') ||
     lower.includes('archbold') ||
     lower.includes('loudoun') ||
     lower.includes('ashburn') ||
     lower.includes('california') ||
     lower.includes('washington') ||
-    lower.includes('usa')
+    /\busa\b/i.test(lower)
   );
+};
+
+/**
+ * Hitung jarak antara dua koordinat latitude/longitude menggunakan rumus Haversine (hasil dalam KM)
+ */
+const calculateDistance = (lat1, lon1, lat2, lon2) => {
+  if (typeof lat1 !== 'number' || typeof lon1 !== 'number' || typeof lat2 !== 'number' || typeof lon2 !== 'number') {
+    return null;
+  }
+  const R = 6371; // Radius bumi dalam KM
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
 };
 
 /**
@@ -104,6 +124,7 @@ const geoService = {
   isValidIndo,
   isForeignAddress,
   parseLocation,
+  calculateDistance,
 
   extractAddressFromUrl: (url) => {
     if (!url) return null;
@@ -176,6 +197,9 @@ const geoService = {
     }
   },
 
+  /**
+   * REVERSE ENGINEERING RESOLVER: Ekstraksi Koordinat & Alamat Presisi Tinggi dari Google Maps
+   */
   resolveLocationAndAddress: async (mapsLink) => {
     try {
       if (!mapsLink) return null;
@@ -200,74 +224,107 @@ const geoService = {
       // 1. Ekstrak Alamat Langsung dari Path URL Google Maps (/maps/place/Name, Address/...)
       let address = geoService.extractAddressFromUrl(finalUrl);
 
-      // 2. Ekstrak Koordinat (dengan validasi ketat batas wilayah Indonesia)
       let lat = null;
       let long = null;
 
-      const regexPatterns = [
-        /@(-?\d+\.\d+),(-?\d+\.\d+)/,
-        /!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/,
-        /[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/,
-        /[?&]ll=(-?\d+\.\d+),(-?\d+\.\d+)/
-      ];
+      // === TIER 1: EXACT PLACE PIN FROM URL (!3d<lat>!4d<lng> atau !8m2!3d<lat>!4d<lng>) ===
+      // Ini adalah koordinat pin akurat tempat, BUKAN sudut pandang kamera (@lat,lng)
+      const match3d4d = finalUrl.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+      if (match3d4d) {
+        const pLat = parseFloat(match3d4d[1]);
+        const pLong = parseFloat(match3d4d[2]);
+        if (isValidIndo(pLat, pLong)) {
+          lat = pLat;
+          long = pLong;
+          console.log(`[GeoService] 🎯 Tier 1 URL Pin Match: ${lat}, ${long}`);
+        }
+      }
 
-      for (const r of regexPatterns) {
-        const m = finalUrl.match(r);
-        if (m) {
-          const pLat = parseFloat(m[1]);
-          const pLong = parseFloat(m[2]);
+      // === TIER 2: EXPLICIT PIN QUERY PARAMETER (?q=lat,lng atau ?ll=lat,lng) ===
+      if (!lat || !long) {
+        const matchQuery = finalUrl.match(/[?&](?:q|ll)=(-?\d+\.\d+),(-?\d+\.\d+)/);
+        if (matchQuery) {
+          const pLat = parseFloat(matchQuery[1]);
+          const pLong = parseFloat(matchQuery[2]);
           if (isValidIndo(pLat, pLong)) {
             lat = pLat;
             long = pLong;
-            break;
+            console.log(`[GeoService] 🎯 Tier 2 Query Pin Match: ${lat}, ${long}`);
           }
         }
       }
 
-      // Check Canonical URL
+      // === TIER 3: GOOGLE MAPS PREVIEW PLACE API (Link Tag di HTML) ===
+      // Khusus untuk link share (maps.app.goo.gl) yang me-redirect ke URL tanpa koordinat di path (/data=!4m2!3m1!1s0x...:0x...)
       if (!lat || !long) {
-        const canonicalMatch = html.match(/<link\s+rel="canonical"\s+href="(.*?)"/);
-        if (canonicalMatch && canonicalMatch[1]) {
-          for (const r of regexPatterns) {
-            const m = canonicalMatch[1].match(r);
-            if (m) {
-              const pLat = parseFloat(m[1]);
-              const pLong = parseFloat(m[2]);
+        const linkMatch = html.match(/<link\s+href="(\/maps\/preview\/place\?[^"]+)"/);
+        if (linkMatch) {
+          const cookies = response.headers['set-cookie']?.map(c => c.split(';')[0]).join('; ');
+          const rawPreviewUrl = 'https://www.google.com' + linkMatch[1].replace(/&amp;/g, '&');
+          try {
+            const previewRes = await axios.get(rawPreviewUrl, {
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': '*/*',
+                'Referer': finalUrl,
+                'Cookie': cookies || ''
+              },
+              timeout: 6000
+            });
+            const body = typeof previewRes.data === 'string' ? previewRes.data : JSON.stringify(previewRes.data);
+            const protoMatch = body.match(/\[null,null,(-?\d+\.\d{4,}),(1\d{2}\.\d{4,})\]/);
+            if (protoMatch) {
+              const pLat = parseFloat(protoMatch[1]);
+              const pLong = parseFloat(protoMatch[2]);
               if (isValidIndo(pLat, pLong)) {
                 lat = pLat;
                 long = pLong;
-                break;
+                console.log(`[GeoService] 🎯 Tier 3 Google Maps Internal Preview Pin: ${lat}, ${long}`);
               }
             }
+          } catch (e) {
+            console.warn('[GeoService] Tier 3 preview fetch error:', e.message);
           }
         }
       }
 
-      // Check staticmap meta image
+      // === TIER 4: VIEWPORT CENTER (@lat,lng) ===
+      // Hanya sebagai alternatif jika pin persis tidak ditemukan
       if (!lat || !long) {
-        const staticMatch = html.match(/center=(-?\d+\.\d+)(?:%2C|,)(-?\d+\.\d+)/);
-        if (staticMatch) {
-          const pLat = parseFloat(staticMatch[1]);
-          const pLong = parseFloat(staticMatch[2]);
+        const matchAt = finalUrl.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+        if (matchAt) {
+          const pLat = parseFloat(matchAt[1]);
+          const pLong = parseFloat(matchAt[2]);
           if (isValidIndo(pLat, pLong)) {
             lat = pLat;
             long = pLong;
+            console.log(`[GeoService] 📍 Tier 4 Viewport fallback: ${lat}, ${long}`);
           }
         }
       }
 
-      // Check JSON coordinates
-      if (!lat || !long) {
-        const simpleJsonRegex = /\[\s*(-?\d+\.\d{3,})\s*,\s*(-?\d+\.\d{3,})\s*\]/g;
-        const jsonMatches = [...html.matchAll(simpleJsonRegex)];
-        for (const m of jsonMatches) {
-          const pLat = parseFloat(m[1]);
-          const pLong = parseFloat(m[2]);
-          if (isValidIndo(pLat, pLong)) {
-            lat = pLat;
-            long = pLong;
-            break;
+      // === TIER 5: NOMINATIM SEARCH DARI NAMA & ALAMAT URL ===
+      // Jika semua ekstraksi koordinat Google gagal, cari koordinat berdasarkan alamat teks bersih
+      if ((!lat || !long) && address) {
+        try {
+          const searchRes = await axios.get(
+            `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&countrycodes=id&limit=1`,
+            {
+              headers: { 'User-Agent': 'DineryBackend/1.0 (contact@dinery.web.id)' },
+              timeout: 4000
+            }
+          );
+          if (searchRes.data && searchRes.data.length > 0) {
+            const pLat = parseFloat(searchRes.data[0].lat);
+            const pLong = parseFloat(searchRes.data[0].lon);
+            if (isValidIndo(pLat, pLong)) {
+              lat = pLat;
+              long = pLong;
+              console.log(`[GeoService] 📍 Tier 5 Nominatim Address Geocode: ${lat}, ${long}`);
+            }
           }
+        } catch (e) {
+          console.warn('[GeoService] Tier 5 search error:', e.message);
         }
       }
 
