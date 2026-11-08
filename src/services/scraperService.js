@@ -70,6 +70,10 @@ const scraperService = {
         $('link[rel="image_src"]').attr('href') || 
         null;
 
+      if (platform === 'Google Maps') {
+        image = imageService.extractGooglePhotoUrl(image);
+      }
+
       if (image && image.startsWith('http')) {
         try {
           const compressed = await imageService.compressUrlToWebpBase64(image);
