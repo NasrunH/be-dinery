@@ -64,7 +64,7 @@ const dashboardController = {
         // Syarat: visits-nya kosong (belum dikunjungi)
         supabase
           .from('places')
-          .select('id, name, meta_image, created_at, visits(id)')
+          .select('id, name, meta_image, address_text, created_at, visits(id)')
           .eq('couple_id', coupleId)
           .order('created_at', { ascending: false })
           .range(0, 20), // Ambil agak banyak dulu, nanti filter di JS
@@ -134,6 +134,7 @@ const dashboardController = {
           id: p.id,
           name: p.name,
           image: p.meta_image,
+          address_text: p.address_text,
           added_at: p.created_at
         }));
 
