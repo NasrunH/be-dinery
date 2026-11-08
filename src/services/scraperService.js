@@ -1,5 +1,6 @@
 const axios = require('axios');
 const cheerio = require('cheerio');
+const imageService = require('./imageService');
 
 const scraperService = {
   getMetadata: async (url) => {
@@ -23,11 +24,16 @@ const scraperService = {
         try {
           const oembedUrl = `https://www.tiktok.com/oembed?url=${url}`;
           const { data } = await axios.get(oembedUrl);
+          let thumb = data.thumbnail_url || null;
+          if (thumb) {
+            const base64 = await imageService.compressUrlToWebpBase64(thumb);
+            if (base64) thumb = base64;
+          }
           return {
             original_link: url,
             platform,
             meta_title: data.title || 'TikTok Video',
-            meta_image: data.thumbnail_url || null
+            meta_image: thumb
           };
         } catch (e) {
           console.log("TikTok OEmbed gagal, lanjut scraping manual...");
@@ -63,6 +69,15 @@ const scraperService = {
         $('meta[name="twitter:image"]').attr('content') || 
         $('link[rel="image_src"]').attr('href') || 
         null;
+
+      if (image && image.startsWith('http')) {
+        try {
+          const compressed = await imageService.compressUrlToWebpBase64(image);
+          if (compressed) image = compressed;
+        } catch (e) {
+          console.warn("Gagal kompres image:", e.message);
+        }
+      }
 
       // 5. CLEANING DATA (Pembersihan Judul)
       

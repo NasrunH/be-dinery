@@ -1,6 +1,7 @@
 const supabase = require('../config/supabase');
 const scraperService = require('../services/scraperService');
 const geoService = require('../services/geoService');
+const imageService = require('../services/imageService');
 const sendNotification = require('../utils/notificationHelper');
 
 const placeController = {
@@ -180,6 +181,13 @@ const placeController = {
         }
       }
 
+      // Auto-compress meta_image ke WebP Base64 agar tersimpan permanen
+      let finalMetaImage = meta_image;
+      if (finalMetaImage && finalMetaImage.startsWith('http')) {
+        const compressed = await imageService.compressUrlToWebpBase64(finalMetaImage);
+        if (compressed) finalMetaImage = compressed;
+      }
+
       // 3. Insert Tempat
       const { data: placeData, error: placeError } = await supabase
         .from('places')
@@ -188,7 +196,8 @@ const placeController = {
           created_by: userId,
           name: name || meta_title || 'Tanpa Nama',
           target_menu,
-          original_link, platform, meta_title, meta_image,
+          original_link, platform, meta_title, 
+          meta_image: finalMetaImage,
           maps_link, address_text: finalAddressText, location: locationPoint,
           category_id, price_range_id
         })
